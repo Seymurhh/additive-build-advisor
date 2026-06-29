@@ -1,128 +1,98 @@
-"""Voxel finite-element analysis for build distortion (inherent-strain method).
+"""Build-distortion finite-element analysis (inherent-strain method).
 
-This is the scientific core of the warpage prediction. It is a small but real
-3D linear-elastic finite-element solver built directly on the voxel grid:
+This is the scientific core of the warpage prediction. It assembles and solves a
+3D linear-elastic finite-element problem with an established FEM library
+(`scikit-fem <https://scikit-fem.readthedocs.io>`_) rather than a hand-rolled
+solver:
 
-* each occupied voxel becomes an 8-node trilinear hexahedral element (24 DOF);
-* the **inherent-strain method** models the accumulated thermal shrinkage of the
-  build as a uniform eigenstrain applied to every element;
+* the occupied voxels are turned into a hexahedral mesh (``MeshHex``), restricted
+  to the part (trilinear ``ElementHex1`` vector elements — good for bending);
+* linear elasticity is assembled with ``skfem.models.elasticity``;
+* the build's accumulated thermal shrinkage is modeled as a uniform
+  **eigenstrain** (the inherent-strain method), entering as the consistent load
+  ``f = integral( sigma0 : sym_grad(v) )`` with ``sigma0 = (3*lam+2*mu)*eps*``;
 * the base layer is clamped to the build plate;
-* the equilibrium system ``K u = f`` is solved matrix-free with a
-  Jacobi-preconditioned conjugate gradient, so no global sparse matrix is ever
-  assembled (the element operator is identical on a regular grid).
+* the sparse system ``K u = f`` is solved with SciPy's sparse direct solver.
 
-The resulting displacement field ``u`` is the predicted distortion. Its peak
-magnitude is the warpage estimate; clamping the base while the bulk shrinks
-reproduces the corner-lift that drives real additive distortion.
+The resulting displacement field is the predicted distortion; we also recover the
+element von Mises stress. Clamping the base while the bulk shrinks reproduces the
+corner-lift that drives real additive distortion.
 
 Target process and prior art
 ----------------------------
 This targets **metal laser powder-bed fusion (LPBF)**, where residual-stress
 warpage governs and the inherent-strain method is the accepted part-scale
-approach (it is what Netfabb and ANSYS Additive use). For polymer processes the
-same machinery runs but the result is only an indicative shrinkage tendency.
+approach (it is what Netfabb and ANSYS Additive use; see the review in *Int. J.
+Adv. Manuf. Technol.*, 2022). The recognized validation artifact is the NIST
+AM-Bench 2018 single cantilever / bridge (AMB2018-01).
 
-The method (apply a calibrated eigenstrain as a static load to a part-scale
-elastic FEA) traces to Ueda's inherent-strain work and its AM adaptations; see
-the state-of-the-art review by Bayat et al. / Setien et al. (Int. J. Adv. Manuf.
-Technol., 2022) and the recognized validation artifact, the NIST AM-Bench 2018
-single cantilever / bridge (AMB2018-01).
-
-This is a *simplified* version: the eigenstrain is a representative isotropic
-per-process value, not a calibrated anisotropic tensor fit to melt-pool history,
-and the whole part is strained at once rather than layer-by-layer. It is still a
-genuine FEA — validated in ``tests`` against the analytical clamped-bar solution
-and for mesh convergence (and shown to be linear in eigenstrain / E-independent,
-as theory requires). See REPORT.md, "Distortion FEA".
-
-Note: for a pure eigenstrain load with no external force, the *displacement*
-field is independent of Young's modulus (it cancels between ``K`` and ``f``), so
-distortion is governed by geometry, eigenstrain, and Poisson's ratio. Young's
-modulus only enters the stress field.
+Scope honesty: this is a *simplified* inherent-strain model — a representative
+isotropic eigenstrain (not a calibrated anisotropic tensor fit to melt-pool
+history), applied to the whole part at once, with the part bonded to the plate.
+So the reported distortion is the *on-plate* field (a relative warpage screen),
+not the post-release deflection NIST measures after cutting the part free. It is
+still validated against the analytical clamped-bar solution in ``tests``. For
+polymer processes the same solver runs but the result is indicative only.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
-
-_GAUSS = 1.0 / np.sqrt(3.0)
-# Local node offsets (unit cube), standard hex ordering.
-_NODE_OFFSETS = np.array(
-    [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
-     [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
-    dtype=float,
-)
-
-
-def elasticity_matrix(E: float, nu: float) -> np.ndarray:
-    """Isotropic 6x6 constitutive matrix (Voigt: xx,yy,zz,xy,yz,zx)."""
-    c = E / ((1.0 + nu) * (1.0 - 2.0 * nu))
-    g = (1.0 - 2.0 * nu) / 2.0
-    D = np.zeros((6, 6))
-    D[:3, :3] = c * np.array([[1 - nu, nu, nu], [nu, 1 - nu, nu], [nu, nu, 1 - nu]])
-    D[3, 3] = D[4, 4] = D[5, 5] = c * g
-    return D
-
-
-def _B_at(xi: float, eta: float, zeta: float, h: float) -> np.ndarray:
-    """Strain-displacement matrix B (6x24) for a cube element of side h."""
-    s = 2.0 * _NODE_OFFSETS - 1.0  # natural-coord signs per node, in {-1,+1}
-    # shape-function derivatives wrt natural coords, then scale to physical (2/h)
-    dN = np.zeros((8, 3))
-    for a in range(8):
-        sx, sy, sz = s[a]
-        dN[a, 0] = 0.125 * sx * (1 + sy * eta) * (1 + sz * zeta)
-        dN[a, 1] = 0.125 * sy * (1 + sx * xi) * (1 + sz * zeta)
-        dN[a, 2] = 0.125 * sz * (1 + sx * xi) * (1 + sy * eta)
-    dN *= 2.0 / h
-    B = np.zeros((6, 24))
-    for a in range(8):
-        bx, by, bz = dN[a]
-        c = 3 * a
-        B[0, c + 0] = bx
-        B[1, c + 1] = by
-        B[2, c + 2] = bz
-        B[3, c + 0] = by; B[3, c + 1] = bx
-        B[4, c + 1] = bz; B[4, c + 2] = by
-        B[5, c + 0] = bz; B[5, c + 2] = bx
-    return B
-
-
-def hex8_KE_and_eigenload(E: float, nu: float, h: float, eigenstrain: np.ndarray):
-    """Return (KE 24x24, f_eigen 24) for a cube element under uniform eigenstrain."""
-    D = elasticity_matrix(E, nu)
-    detJ = (h / 2.0) ** 3
-    KE = np.zeros((24, 24))
-    fE = np.zeros(24)
-    De = D @ eigenstrain
-    for xi in (-_GAUSS, _GAUSS):
-        for eta in (-_GAUSS, _GAUSS):
-            for zeta in (-_GAUSS, _GAUSS):
-                B = _B_at(xi, eta, zeta, h)
-                KE += detJ * (B.T @ D @ B)
-                fE += detJ * (B.T @ De)
-    return KE, fE
+from skfem import (Basis, ElementHex1, ElementVector, LinearForm, MeshHex,
+                   asm, condense, solve)
+from skfem.helpers import div
+from skfem.models.elasticity import lame_parameters, linear_elasticity
 
 
 @dataclass
 class FEAResult:
     max_displacement_mm: float
     mean_displacement_mm: float
-    converged: bool
-    iterations: int
+    peak_von_mises_mpa: Optional[float]
     n_elements: int
     n_dof: int
+    converged: bool
+    solver: str
     eigenstrain: float
-    # node-grid displacement magnitude, shape (nx+1, ny+1, nz+1); kept out of repr
-    disp_grid: np.ndarray = field(repr=False, default=None)
-    # node-grid displacement vectors, shape (nx+1, ny+1, nz+1, 3); for deformed-mesh plots
-    disp_vec: np.ndarray = field(repr=False, default=None)
-    node_shape: Tuple[int, int, int] = (0, 0, 0)
+    # mesh + nodal fields for plotting (kept out of repr)
+    nodes: np.ndarray = field(repr=False, default=None)        # (3, N)
+    quads: np.ndarray = field(repr=False, default=None)        # (4, M) boundary facets
+    u_nodal: np.ndarray = field(repr=False, default=None)      # (3, N)
+    mag_nodal: np.ndarray = field(repr=False, default=None)    # (N,)
+    vm_nodal: np.ndarray = field(repr=False, default=None)     # (N,)
     pitch: float = 0.0
-    peak_von_mises_mpa: Optional[float] = None
+
+    @property
+    def iterations(self) -> int:  # back-compat with the record schema
+        return 0
+
+
+def _empty_result(eigenstrain: float, pitch: float) -> FEAResult:
+    return FEAResult(0.0, 0.0, 0.0, 0, 0, True, "scipy sparse (direct)", eigenstrain,
+                     np.zeros((3, 0)), np.zeros((4, 0), dtype=int),
+                     np.zeros((3, 0)), np.zeros(0), np.zeros(0), pitch)
+
+
+def _hex_mesh_from_voxels(occ: np.ndarray, pitch: float) -> MeshHex:
+    """Build a hexahedral mesh of the occupied voxels (skfem node ordering)."""
+    nx, ny, nz = occ.shape
+    xs = np.arange(nx + 1) * pitch
+    ys = np.arange(ny + 1) * pitch
+    zs = np.arange(nz + 1) * pitch
+    full = MeshHex.init_tensor(xs, ys, zs)
+    centroids = full.p[:, full.t].mean(axis=1)          # (3, n_elem)
+    vi = np.clip(np.floor(centroids[0] / pitch).astype(int), 0, nx - 1)
+    vj = np.clip(np.floor(centroids[1] / pitch).astype(int), 0, ny - 1)
+    vk = np.clip(np.floor(centroids[2] / pitch).astype(int), 0, nz - 1)
+    keep = occ[vi, vj, vk]
+    t = full.t[:, keep]
+    used, inv = np.unique(t, return_inverse=True)
+    t2 = np.ascontiguousarray(inv.reshape(t.shape))
+    p2 = np.ascontiguousarray(full.p[:, used])
+    return MeshHex(p2, t2)
 
 
 def solve_inherent_strain(
@@ -132,140 +102,82 @@ def solve_inherent_strain(
     nu: float,
     eigenstrain: float,
     clamp_base: bool = True,
-    max_iter: int = 4000,
-    tol: float = 1e-6,
-    compute_stress: bool = False,
+    **_ignored,
 ) -> FEAResult:
-    """Solve for build distortion of the occupancy grid under uniform eigenstrain.
+    """Solve for build distortion under a uniform eigenstrain (inherent-strain).
 
     ``eigenstrain`` is the (negative) isotropic shrinkage applied to every
-    element. Base nodes (z-index 0) are clamped to the plate. Solved matrix-free
-    with Jacobi-preconditioned CG.
+    element. Base nodes (z ~ 0) are clamped to the plate. Assembled with
+    scikit-fem, solved with SciPy's sparse direct solver.
     """
-    nx, ny, nz = occ.shape
-    nnx, nny, nnz = nx + 1, ny + 1, nz + 1
-    n_nodes = nnx * nny * nnz
-    n_dof = 3 * n_nodes
+    if occ.sum() == 0:
+        return _empty_result(eigenstrain, pitch)
 
-    eps_vec = np.array([eigenstrain, eigenstrain, eigenstrain, 0.0, 0.0, 0.0])
-    KE, fE = hex8_KE_and_eigenload(E, nu, pitch, eps_vec)
+    mesh = _hex_mesh_from_voxels(occ, pitch)
+    basis = Basis(mesh, ElementVector(ElementHex1()))
+    lam, mu = lame_parameters(E, nu)
 
-    elem_idx = np.argwhere(occ)  # (n_el, 3) active voxel coords (i,j,k)
-    n_el = elem_idx.shape[0]
-    if n_el == 0:
-        return FEAResult(0.0, 0.0, True, 0, 0, 0, eigenstrain,
-                         np.zeros((nnx, nny, nnz)), (nnx, nny, nnz), pitch)
+    K = asm(linear_elasticity(lam, mu), basis)
+    sigma0 = (3.0 * lam + 2.0 * mu) * eigenstrain  # hydrostatic eigenstress
 
-    # node id for each element's 8 local nodes -> edof (n_el, 24)
-    def node_id(i, j, k):
-        return i + j * nnx + k * nnx * nny
+    @LinearForm
+    def eigenload(v, w):
+        return sigma0 * div(v)
 
-    edof = np.zeros((n_el, 24), dtype=np.int64)
-    off = _NODE_OFFSETS.astype(int)
-    for a in range(8):
-        di, dj, dk = off[a]
-        nid = node_id(elem_idx[:, 0] + di, elem_idx[:, 1] + dj, elem_idx[:, 2] + dk)
-        edof[:, 3 * a] = 3 * nid
-        edof[:, 3 * a + 1] = 3 * nid + 1
-        edof[:, 3 * a + 2] = 3 * nid + 2
+    f = asm(eigenload, basis)
 
-    # global load vector (assemble eigenstrain load)
-    f = np.bincount(edof.ravel(), weights=np.tile(fE, n_el), minlength=n_dof)
-
-    # which DOFs are active (touched by an element)
-    active = np.zeros(n_dof, dtype=bool)
-    active[np.unique(edof)] = True
-
-    # clamp base nodes (k == 0) that are active
-    fixed = np.zeros(n_dof, dtype=bool)
     if clamp_base:
-        active_nodes = np.unique(edof) // 3
-        base_nodes = active_nodes[(active_nodes // (nnx * nny)) == 0]
-        for d in range(3):
-            fixed[3 * base_nodes + d] = True
-    free = active & ~fixed
+        clamped = basis.get_dofs(lambda x: x[2] < pitch * 0.4)
+    else:  # fall back to a single corner to remove rigid-body modes
+        clamped = basis.get_dofs(lambda x: (x[0] < pitch * 0.4) & (x[1] < pitch * 0.4) & (x[2] < pitch * 0.4))
 
-    # matrix-free K*u over active elements
-    KE_flat = KE
+    u = solve(*condense(K, f, D=clamped))
 
-    def matvec(u):
-        ue = u[edof]                       # (n_el, 24)
-        fe = ue @ KE_flat.T                # (n_el, 24)
-        out = np.bincount(edof.ravel(), weights=fe.ravel(), minlength=n_dof)
-        out[~free] = 0.0
-        return out
+    nodes = mesh.p
+    n_nodes = nodes.shape[1]
+    u_nodal = u[basis.nodal_dofs]                       # (3, N)
+    mag = np.linalg.norm(u_nodal, axis=0)               # (N,)
 
-    # Jacobi preconditioner: diagonal of K
-    diagKE = np.diag(KE)
-    diagK = np.bincount(edof.ravel(), weights=np.tile(diagKE, n_el), minlength=n_dof)
-    diagK[~free] = 1.0
-    Minv = 1.0 / diagK
-
-    # preconditioned CG on free DOFs
-    b = f.copy()
-    b[~free] = 0.0
-    u = np.zeros(n_dof)
-    r = b - matvec(u)
-    r[~free] = 0.0
-    z = Minv * r
-    p = z.copy()
-    rz = float(r @ z)
-    bnorm = float(np.linalg.norm(b)) or 1.0
-    it = 0
-    converged = False
-    for it in range(1, max_iter + 1):
-        Ap = matvec(p)
-        denom = float(p @ Ap) or 1e-30
-        alpha = rz / denom
-        u += alpha * p
-        r -= alpha * Ap
-        r[~free] = 0.0
-        if np.linalg.norm(r) / bnorm < tol:
-            converged = True
-            break
-        z = Minv * r
-        rz_new = float(r @ z)
-        p = z + (rz_new / rz) * p
-        rz = rz_new
-
-    disp = u.reshape(n_nodes, 3)
-    mag = np.linalg.norm(disp, axis=1)
-    # zero-out inactive nodes for clean stats/plots
-    active_node_mask = np.zeros(n_nodes, dtype=bool)
-    active_node_mask[np.unique(edof) // 3] = True
-    mag_active = mag[active_node_mask]
-    disp_grid = mag.reshape(nnx, nny, nnz)
-    disp_vec = disp.reshape(nnx, nny, nnz, 3)
-
-    peak_vm = None
-    if compute_stress:
-        peak_vm = _peak_von_mises(u, edof, pitch, E, nu, eps_vec)
-
-    return FEAResult(
-        max_displacement_mm=float(mag_active.max()) if mag_active.size else 0.0,
-        mean_displacement_mm=float(mag_active.mean()) if mag_active.size else 0.0,
-        converged=converged,
-        iterations=it,
-        n_elements=n_el,
-        n_dof=int(free.sum()),
-        eigenstrain=eigenstrain,
-        disp_grid=disp_grid,
-        disp_vec=disp_vec,
-        node_shape=(nnx, nny, nnz),
-        pitch=pitch,
-        peak_von_mises_mpa=peak_vm,
-    )
-
-
-def _peak_von_mises(u, edof, h, E, nu, eps_vec) -> float:
-    """Peak element-centroid von Mises stress (mechanical strain = total - eigen)."""
-    D = elasticity_matrix(E, nu)
-    B0 = _B_at(0.0, 0.0, 0.0, h)
-    ue = u[edof]                       # (n_el, 24)
-    total = ue @ B0.T                  # (n_el, 6) strain at centroid
-    mech = total - eps_vec             # subtract eigenstrain
-    stress = mech @ D.T                # (n_el, 6) Voigt stress
-    sx, sy, sz, txy, tyz, tzx = stress.T
+    # element von Mises at quadrature points, mechanical strain = total - eigen
+    wu = basis.interpolate(u)
+    G = wu.grad                                         # (3, 3, n_elem, n_qp)
+    eps = 0.5 * (G + G.transpose(1, 0, 2, 3))
+    epsm = eps.copy()
+    for d in range(3):
+        epsm[d, d] = epsm[d, d] - eigenstrain
+    trm = epsm[0, 0] + epsm[1, 1] + epsm[2, 2]
+    sig = 2.0 * mu * epsm
+    for d in range(3):
+        sig[d, d] = sig[d, d] + lam * trm
+    sx, sy, sz = sig[0, 0], sig[1, 1], sig[2, 2]
+    txy, tyz, tzx = sig[0, 1], sig[1, 2], sig[2, 0]
     vm = np.sqrt(0.5 * ((sx - sy) ** 2 + (sy - sz) ** 2 + (sz - sx) ** 2)
                  + 3.0 * (txy ** 2 + tyz ** 2 + tzx ** 2))
-    return float(vm.max()) if vm.size else 0.0
+    vm_elem = vm.mean(axis=1)                           # (n_elem,)
+
+    # scatter element von Mises to nodes (average) for a smooth contour
+    t = mesh.t                                          # (8, n_elem)
+    vm_nodal = np.zeros(n_nodes)
+    counts = np.zeros(n_nodes)
+    np.add.at(vm_nodal, t.T.ravel(), np.repeat(vm_elem, t.shape[0]))
+    np.add.at(counts, t.T.ravel(), 1.0)
+    vm_nodal /= np.maximum(counts, 1.0)
+
+    quads = mesh.facets[:, mesh.boundary_facets()]      # (4, M)
+
+    return FEAResult(
+        max_displacement_mm=float(mag.max()),
+        mean_displacement_mm=float(mag.mean()),
+        peak_von_mises_mpa=float(vm_elem.max()),
+        n_elements=int(mesh.t.shape[1]),
+        n_dof=int(basis.N),
+        converged=True,
+        solver="scikit-fem assembly + SciPy sparse direct",
+        eigenstrain=eigenstrain,
+        nodes=nodes,
+        quads=quads,
+        u_nodal=u_nodal,
+        mag_nodal=mag,
+        vm_nodal=vm_nodal,
+        pitch=pitch,
+    )

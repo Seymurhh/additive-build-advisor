@@ -71,7 +71,7 @@ def test_orientation_rests_on_a_face():
     # The chosen orientation should rest on a real flat face (large contact
     # fraction), fit the build volume, and not be the highest-support candidate.
     mesh = shapes.gantry_bracket()
-    res = advise(mesh=mesh, process="fff_pla", grid_n=32)
+    res = advise(mesh=mesh, process="fff_pla", grid_n=32, fea_grid_n=12)
     cands = res["orientation"]["candidates"]
     best = res["orientation"]["best"]
     assert best.fits_build_volume
@@ -94,7 +94,7 @@ def test_fea_matches_analytical_bar():
 
 
 def test_fea_distortion_in_record():
-    r = advise(mesh=shapes.gantry_bracket(), process="lpbf_ti64", grid_n=32, fea_grid_n=18)
+    r = advise(mesh=shapes.gantry_bracket(), process="lpbf_ti64", grid_n=32, fea_grid_n=12)
     d = r["record"]["distortion_fea"]
     assert d["max_distortion_mm"] > 0
     assert d["converged"] is True
@@ -105,23 +105,23 @@ def test_gate_outcomes():
     # release: a cube with tolerances it can hold as-built
     loose = {"part_name": "cube", "critical_dimensions": [
         {"name": "x", "nominal_mm": 20.0, "tolerance_mm": 0.6, "type": "length"}]}
-    r = advise(mesh=shapes.cube(20.0), process="fff_pla", tolerance_spec=loose, grid_n=32)
+    r = advise(mesh=shapes.cube(20.0), process="fff_pla", tolerance_spec=loose, grid_n=32, fea_grid_n=12)
     assert r["record"]["gate"]["decision"] == "release_to_build"
 
     # needs review: a tolerance below FFF as-built capability
     tight = {"part_name": "cube", "critical_dimensions": [
         {"name": "x", "nominal_mm": 20.0, "tolerance_mm": 0.02, "type": "length"}]}
-    r = advise(mesh=shapes.cube(20.0), process="fff_pla", tolerance_spec=tight, grid_n=32)
+    r = advise(mesh=shapes.cube(20.0), process="fff_pla", tolerance_spec=tight, grid_n=32, fea_grid_n=12)
     assert r["record"]["gate"]["decision"] == "needs_engineering_review"
 
     # redesign: an enclosed cavity on a process that must drain
-    r = advise(mesh=shapes.hollow_housing(), process="sla_resin", grid_n=48)
+    r = advise(mesh=shapes.hollow_housing(), process="sla_resin", grid_n=48, fea_grid_n=14)
     assert r["record"]["gate"]["decision"] == "redesign_required"
     assert r["record"]["manufacturability"]["n_critical"] >= 1
 
 
 def test_record_is_json_serializable():
-    r = advise(mesh=shapes.gantry_bracket(), process="lpbf_alsi10mg", grid_n=32)
+    r = advise(mesh=shapes.gantry_bracket(), process="lpbf_alsi10mg", grid_n=32, fea_grid_n=12)
     json.dumps(r["record"])  # raises if any numpy types leaked through
 
 

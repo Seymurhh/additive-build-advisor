@@ -35,7 +35,7 @@ def advise(
     process: str = "fff_pla",
     tolerance_spec: Optional[Dict[str, object]] = None,
     grid_n: int = 64,
-    fea_grid_n: int = 20,
+    fea_grid_n: int = 26,
     source_label: Optional[str] = None,
 ) -> Dict[str, object]:
     """Run the full advisory pipeline on a part.

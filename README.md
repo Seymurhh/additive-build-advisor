@@ -21,11 +21,11 @@ engineer runs before committing a build:
    *actual support volume*, base-contact area, and build height.
 3. **Simulate the build** — voxelize the part by ray-stabbing, then estimate
    layer count, support volume, build time, material, and cost.
-4. **Analyze distortion (FEA)** — a linear-elastic voxel finite-element solve
-   using the **inherent-strain method**: each element carries a thermal
-   eigenstrain, the base is clamped to the plate, and the predicted distortion
-   field is solved matrix-free. This is what tools like Netfabb / ANSYS Additive
-   do for fast distortion screening.
+4. **Analyze distortion (FEA)** — a linear-elastic finite-element solve using the
+   **inherent-strain method**, assembled and solved with **scikit-fem** on a
+   hexahedral mesh: each element carries a thermal eigenstrain, the base is
+   clamped to the plate, and the distortion field is solved. This is what tools
+   like Netfabb / ANSYS Additive do for fast distortion screening.
 5. **Check manufacturability (DfAM)** — thin walls, support burden, aspect ratio,
    distortion, and trapped powder/resin (enclosed voids found by flood fill).
 6. **Plan inspection** — turn the part's tolerances into a first-article
@@ -33,10 +33,12 @@ engineer runs before committing a build:
 7. **Gate the release** — assemble a machine-readable digital-thread record and
    decide whether the build can proceed, with the reasons attached.
 
-The geometry kernel, STL parser, voxelizer, orientation search, build simulation
-**and the FEA solver** are written from first principles on top of `numpy` — no
-CAD kernel, no FEM package — so every engineering decision is legible and
-defensible. `matplotlib` only renders the report.
+The geometry kernel, STL parser, voxelizer, orientation search, and build
+simulation are written from first principles on top of `numpy` (no CAD kernel),
+so those decisions are legible. The distortion FEA is assembled and solved with
+**scikit-fem** (a real finite-element library, on `scipy`) — the credible choice
+for the one piece that genuinely warrants an established solver. `matplotlib`
+renders the report.
 
 ## Where this sits: the digital thread
 
@@ -67,7 +69,7 @@ flowchart LR
 
 ## Quickstart
 
-Python 3.9+; depends only on `numpy` and `matplotlib`.
+Python 3.9+; depends on `numpy`, `scipy`, `scikit-fem`, and `matplotlib`.
 
 ```bash
 pip install -r requirements.txt
@@ -167,7 +169,7 @@ additive-build-advisor/
     voxelize.py        # ray-stabbing voxelization + support/thin-wall/trapped analyses
     orientation.py     # rest-on-face orientation screening (support + contact + height)
     am_sim.py          # build simulation: layers, support, time, cost
-    fea.py             # inherent-strain linear-elastic voxel FEM (matrix-free CG)
+    fea.py             # inherent-strain linear-elastic FEM (scikit-fem hex + SciPy)
     dfam.py            # design-for-additive-manufacturing checks
     inspection.py      # tolerance spec -> inspection plan + capability check
     digital_thread.py  # record assembly + release gate + JSON

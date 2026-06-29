@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Seymur Hasanov" }]
-dependencies = ["numpy>=1.24", "matplotlib>=3.6"]
+dependencies = ["numpy>=1.24", "scipy>=1.10", "scikit-fem>=8.0", "matplotlib>=3.6"]
 
 [project.scripts]
 build-advisor = "abadvisor.cli:main"

@@ -32,9 +32,11 @@ process capability) rather than a black-box model. It is built to hand off to a
 separate runtime-monitoring twin (`mini-manufacturing-digital-twin`), so the two
 together span design → build → monitor.
 
-The package depends only on `numpy` (math) and `matplotlib` (report figures).
-The STL parser, geometry kernel, voxelizer, orientation search, build simulation,
-and FEA solver are all written from scratch so the engineering is legible.
+The STL parser, geometry kernel, voxelizer, orientation search, and build
+simulation are written from scratch on `numpy` so that engineering is legible.
+The distortion FEA is assembled and solved with **scikit-fem** (an established
+finite-element library) on top of `scipy` — using a real FEM library here is the
+honest, credible choice; `matplotlib` renders the report figures.
 
 ## System architecture
 
@@ -116,15 +118,17 @@ simulation and FEA then run once, on the winner.
 
 ## Distortion FEA: the inherent-strain method
 
-Distortion is predicted with a genuine finite-element solve, not a heuristic:
+Distortion is predicted with a genuine finite-element solve, not a heuristic,
+using **scikit-fem** (an established FEM library) rather than a hand-rolled solver:
 
-- each occupied voxel becomes an 8-node trilinear hexahedral element (24 DOF);
+- the occupied voxels become a hexahedral mesh of 8-node trilinear
+  (``ElementHex1``) vector elements — good for bending, unlike linear tets;
 - the accumulated thermal shrinkage of the build is modeled as a uniform
-  **eigenstrain** (inherent strain) applied to every element;
+  **eigenstrain** (inherent strain), entering as the consistent load
+  ``f = integral( sigma0 : sym_grad(v) )`` with ``sigma0 = (3*lam + 2*mu)*eps*``;
 - the base layer is clamped to the build plate;
-- equilibrium ``K u = f`` is solved **matrix-free** with a Jacobi-preconditioned
-  conjugate gradient — the element operator is identical on a regular grid, so no
-  global sparse matrix is assembled.
+- the sparse system ``K u = f`` is assembled by scikit-fem and solved with
+  SciPy's sparse direct solver; element von Mises stress is recovered for context.
 
 The displacement field is the predicted distortion; its peak magnitude is the
 warpage estimate. Clamping the base while the bulk shrinks reproduces the
@@ -309,7 +313,7 @@ picks a build orientation by resting the part on its flat faces and scoring real
 support volume and base contact, simulates the build on a voxel model I validate
 against analytic volume, and predicts distortion with an actual finite-element
 solve: a linear-elastic voxel FEM using the inherent-strain method, clamped at
-the plate, solved matrix-free. I validated the FEA against the analytical
+the plate, solved with scikit-fem. I validated the FEA against the analytical
 clamped-bar case and confirmed the distortion is linear in eigenstrain and
 E-independent, which is what the theory demands. Then DfAM and inspection-
 capability checks feed a gate that decides release, review, or redesign. I kept

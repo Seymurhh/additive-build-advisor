@@ -24,36 +24,41 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.cm import ScalarMappable  # noqa: E402
 from matplotlib.colors import Normalize  # noqa: E402
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection  # noqa: E402
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: E402
 
-# Publication ("Nature"-style) figure defaults: clean sans-serif, light spines,
-# no chartjunk, restrained palette, generous DPI.
+# Publication / LaTeX-style figure defaults: Computer Modern (serif + CM mathtext),
+# light spines, restrained palette, high DPI. We use mathtext rather than full
+# usetex so unicode labels stay robust and rendering stays fast.
 plt.rcParams.update({
-    "figure.dpi": 140,
-    "savefig.dpi": 140,
+    "figure.dpi": 200,
+    "savefig.dpi": 200,
     "savefig.bbox": "tight",
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Helvetica", "Arial", "TeX Gyre Heros", "DejaVu Sans"],
-    "font.size": 9,
-    "axes.titlesize": 10,
-    "axes.titleweight": "bold",
-    "axes.labelsize": 9,
-    "axes.linewidth": 0.7,
-    "axes.edgecolor": "#333333",
+    "savefig.pad_inches": 0.06,
+    "text.usetex": False,
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "Latin Modern Roman", "DejaVu Serif", "Times New Roman"],
+    "mathtext.fontset": "cm",
+    "axes.formatter.use_mathtext": True,
+    "font.size": 10,
+    "axes.titlesize": 11,
+    "axes.titleweight": "normal",
+    "axes.labelsize": 10,
+    "axes.linewidth": 0.8,
+    "axes.edgecolor": "#222222",
     "axes.spines.top": False,
     "axes.spines.right": False,
     "axes.grid": True,
-    "grid.color": "#e6e6e6",
+    "grid.color": "#e8e8e8",
     "grid.linewidth": 0.6,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "xtick.direction": "out",
-    "ytick.direction": "out",
-    "xtick.major.width": 0.7,
-    "ytick.major.width": 0.7,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+    "xtick.major.width": 0.8,
+    "ytick.major.width": 0.8,
     "legend.frameon": False,
-    "legend.fontsize": 8,
-    "lines.linewidth": 1.6,
+    "legend.fontsize": 9,
+    "lines.linewidth": 1.7,
 })
 
 # Restrained palette
@@ -138,90 +143,53 @@ def _fig_cost_time(sim, path: Path) -> None:
     plt.close(fig)
 
 
-# Local node offsets, and the 6 voxel faces as ordered corner-node offsets.
-_FACES = {
-    "x-": ((0, 0, 0), (0, 1, 0), (0, 1, 1), (0, 0, 1)),
-    "x+": ((1, 0, 0), (1, 1, 0), (1, 1, 1), (1, 0, 1)),
-    "y-": ((0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)),
-    "y+": ((0, 1, 0), (1, 1, 0), (1, 1, 1), (0, 1, 1)),
-    "z-": ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)),
-    "z+": ((0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)),
-}
-_NEIGHBOR = {"x-": (-1, 0, 0), "x+": (1, 0, 0), "y-": (0, -1, 0),
-             "y+": (0, 1, 0), "z-": (0, 0, -1), "z+": (0, 0, 1)}
+def _fig_distortion(fea, path: Path) -> None:
+    """FEA distortion contour on the deformed surface mesh (scikit-fem result).
 
-
-def _surface_quads(occ):
-    """Exposed voxel faces as lists of 4 node-index tuples (the FEA surface mesh)."""
-    nx, ny, nz = occ.shape
-    quads = []
-    ii, jj, kk = np.nonzero(occ)
-    for i, j, k in zip(ii, jj, kk):
-        for face, (di, dj, dk) in _NEIGHBOR.items():
-            ni, nj, nk = i + di, j + dj, k + dk
-            inside = (0 <= ni < nx) and (0 <= nj < ny) and (0 <= nk < nz)
-            if inside and occ[ni, nj, nk]:
-                continue  # interior face, skip
-            quads.append([(i + ox, j + oy, k + oz) for (ox, oy, oz) in _FACES[face]])
-    return quads
-
-
-def _fig_distortion(fea, fea_grid, path: Path) -> None:
-    """Deformed FEA surface mesh, exaggerated, contour-colored by |u|."""
-    occ = fea_grid.occ
-    if occ.sum() == 0 or fea.disp_vec is None:
+    Colors the boundary mesh by displacement magnitude and shows the part
+    deformed by a *modest* exaggeration so the warpage reads as a real FEA
+    result rather than an artificially spiky one.
+    """
+    if fea.nodes is None or fea.nodes.shape[1] == 0 or fea.quads.shape[1] == 0:
         return
-    quads = _surface_quads(occ)
-    if not quads:
-        return
-    p = fea.pitch
-    dv = fea.disp_vec
-    max_disp = max(fea.max_displacement_mm, 1e-9)
-    ext = np.array(occ.shape) * p
-    # exaggerate so the peak distortion is ~18% of the largest part dimension
-    scale = 0.18 * float(ext.max()) / max_disp
+    p = fea.nodes                      # (3, N) undeformed node coords
+    quads = fea.quads                  # (4, M) boundary facet node indices
+    u = fea.u_nodal                    # (3, N)
+    field = fea.mag_nodal              # (N,) displacement magnitude
+    maxd = max(fea.max_displacement_mm, 1e-9)
 
-    undeformed, deformed, facemag = [], [], []
-    for quad in quads:
-        ub, df = [], []
-        mags = []
-        for (i, j, k) in quad:
-            base = np.array([i, j, k], dtype=float) * p
-            d = dv[i, j, k]
-            ub.append(base)
-            df.append(base + d * scale)
-            mags.append(float(np.linalg.norm(d)))
-        undeformed.append(ub)
-        deformed.append(df)
-        facemag.append(np.mean(mags))
-    facemag = np.array(facemag)
+    ext = p.max(axis=1) - p.min(axis=1)
+    scale = 0.08 * float(ext.max()) / maxd       # peak deflection ~8% of size
+    defp = p + u * scale
 
-    norm = Normalize(vmin=0.0, vmax=max_disp)
-    cmap = plt.get_cmap("inferno")
-    fig = plt.figure(figsize=(6.2, 5.4))
+    polys = [defp[:, quads[:, k]].T for k in range(quads.shape[1])]
+    facevals = np.array([field[quads[:, k]].mean() for k in range(quads.shape[1])])
+
+    norm = Normalize(vmin=0.0, vmax=maxd)
+    cmap = plt.get_cmap("turbo")
+    fig = plt.figure(figsize=(6.6, 5.6))
     ax = fig.add_subplot(111, projection="3d")
-    # faint undeformed reference (build orientation)
-    ax.add_collection3d(Line3DCollection(
-        [q + [q[0]] for q in undeformed], colors="#c8cdd4", linewidths=0.3))
-    poly = Poly3DCollection(deformed, linewidths=0.25, edgecolors="#2d2d2d")
-    poly.set_facecolor(cmap(norm(facemag)))
+    poly = Poly3DCollection(polys, linewidths=0.12, edgecolors=(0, 0, 0, 0.18))
+    poly.set_facecolor(cmap(norm(facevals)))
     ax.add_collection3d(poly)
 
-    allpts = np.array([pt for q in deformed for pt in q] + [pt for q in undeformed for pt in q])
-    ax.set_xlim(allpts[:, 0].min(), allpts[:, 0].max())
-    ax.set_ylim(allpts[:, 1].min(), allpts[:, 1].max())
-    ax.set_zlim(allpts[:, 2].min(), allpts[:, 2].max())
+    ax.set_xlim(defp[0].min(), defp[0].max())
+    ax.set_ylim(defp[1].min(), defp[1].max())
+    ax.set_zlim(defp[2].min(), defp[2].max())
     try:
-        ax.set_box_aspect((np.ptp(allpts[:, 0]) or 1, np.ptp(allpts[:, 1]) or 1, np.ptp(allpts[:, 2]) or 1))
+        ax.set_box_aspect((np.ptp(defp[0]) or 1, np.ptp(defp[1]) or 1, np.ptp(defp[2]) or 1))
     except Exception:
         pass
+    ax.view_init(elev=22, azim=-60)
     sm = ScalarMappable(norm=norm, cmap=cmap)
     cb = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.08)
-    cb.set_label("distortion |u| (mm)")
+    cb.set_label(r"displacement $|u|$ (mm)")
     ax.set_xlabel("x (mm)"); ax.set_ylabel("y (mm)"); ax.set_zlabel("z (mm)")
-    ax.set_title(f"Inherent-strain FEA — deformed mesh (×{scale:.0f} exaggerated)\n"
-                 f"peak {fea.max_displacement_mm:.3f} mm · {fea.n_elements} elements · "
-                 f"{fea.iterations} CG iters", fontsize=9)
+    vm = f", von Mises peak {fea.peak_von_mises_mpa:.0f} MPa" if fea.peak_von_mises_mpa else ""
+    ax.set_title(f"Inherent-strain FEA — distortion on deformed mesh "
+                 f"(deformation $\\times${scale:.0f})\n"
+                 f"peak {fea.max_displacement_mm:.3f} mm, {fea.n_elements} hex elements{vm}",
+                 fontsize=9.5)
     ax.grid(False)
     fig.tight_layout()
     fig.savefig(path)
@@ -262,7 +230,7 @@ def render_figures(result: Dict, outdir: str) -> Dict[str, str]:
     _fig_orientation(result["orientation"], figs["orientation"])
     _fig_layer_profile(result["sim"], figs["layers"])
     _fig_cost_time(result["sim"], figs["cost_time"])
-    _fig_distortion(result["fea"], result["fea_grid"], figs["distortion"])
+    _fig_distortion(result["fea"], figs["distortion"])
     _fig_part3d(result["oriented_mesh"], figs["part3d"])
     return {k: str(v) for k, v in figs.items() if v.exists()}
 
@@ -388,8 +356,8 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
 
 <h2>Distortion FEA (inherent-strain method)</h2>
 <p class="sub">Target process: metal LPBF · <b>{_html.escape(str(fea.get('applicability', '')))}</b>.
-Linear-elastic voxel FEM: {fea['elements']} elements, {fea['dof']} DOF, solved in
-{fea['solver_iterations']} CG iterations (converged: {fea['converged']}). Eigenstrain {fea['eigenstrain']}.
+Solved with {_html.escape(str(fea.get('solver', '')))}: {fea['elements']} hex elements,
+{fea['dof']} DOF (converged: {fea['converged']}). Eigenstrain {fea['eigenstrain']}.
 Peak distortion <b>{fea['max_distortion_mm']} mm</b>; peak von Mises
 {fea['peak_von_mises_mpa']} MPa (linear-elastic, indicative — no plasticity, so it can exceed yield).
 Deformed mesh below is exaggerated for visibility.</p>

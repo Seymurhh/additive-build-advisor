@@ -179,7 +179,8 @@ def build_record(
             },
         },
         "distortion_fea": {
-            "method": "inherent-strain linear-elastic voxel FEM",
+            "method": "inherent-strain linear-elastic FEM (scikit-fem, hex elements)",
+            "solver": fea.solver,
             "target_process": "metal LPBF",
             "applicability": ("calibrated regime (metal PBF)" if profile.family == "LPBF"
                               else f"indicative only — inherent-strain targets metal PBF, not {profile.family}"),
@@ -190,7 +191,6 @@ def build_record(
                                    if fea.peak_von_mises_mpa is not None else None),
             "elements": fea.n_elements,
             "dof": fea.n_dof,
-            "solver_iterations": fea.iterations,
             "converged": fea.converged,
         },
         "manufacturability": dfam,

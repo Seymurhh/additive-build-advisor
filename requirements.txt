@@ -1,5 +1,7 @@
-# Light scientific stack. STL parsing, geometry, voxelization, DoE, and the
-# build simulation are written from scratch on top of numpy. matplotlib is
-# only used to render the report figures.
+# Scientific + FEM stack. STL parsing, geometry, voxelization, DoE and the build
+# simulation are written from scratch on numpy. The distortion FEA is assembled
+# and solved with scikit-fem (on top of scipy). matplotlib renders the report.
 numpy>=1.24
+scipy>=1.10
+scikit-fem>=8.0
 matplotlib>=3.6
