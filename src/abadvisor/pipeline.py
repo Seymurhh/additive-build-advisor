@@ -19,6 +19,7 @@ from typing import Dict, Optional
 from . import digital_thread
 from .am_sim import simulate_build
 from .dfam import run_dfam
+from .fea import solve_inherent_strain
 from .geometry import Mesh, watertight_report
 from .inspection import generate_inspection_plan
 from .materials import get_profile
@@ -34,6 +35,7 @@ def advise(
     process: str = "fff_pla",
     tolerance_spec: Optional[Dict[str, object]] = None,
     grid_n: int = 64,
+    fea_grid_n: int = 20,
     source_label: Optional[str] = None,
 ) -> Dict[str, object]:
     """Run the full advisory pipeline on a part.
@@ -59,7 +61,16 @@ def advise(
     oriented = mesh.transformed(best.rotation).dropped_to_plate()
     grid = voxelize(oriented, grid_n=grid_n)
     sim = simulate_build(oriented, grid, profile)
-    dfam = run_dfam(oriented, grid, sim, profile, orientation_fits=best.fits_build_volume)
+
+    # Distortion FEA (inherent-strain method) on a separate coarse grid.
+    fea_grid = voxelize(oriented, grid_n=fea_grid_n)
+    fea = solve_inherent_strain(
+        fea_grid.occ, fea_grid.pitch,
+        E=profile.youngs_modulus_mpa, nu=profile.poisson_ratio,
+        eigenstrain=profile.inherent_strain, compute_stress=True,
+    )
+
+    dfam = run_dfam(oriented, grid, sim, profile, fea, orientation_fits=best.fits_build_volume)
     inspection = generate_inspection_plan(oriented, profile, tolerance_spec)
 
     record = digital_thread.build_record(
@@ -69,6 +80,7 @@ def advise(
         profile=profile,
         orientation=orientation,
         sim=sim,
+        fea=fea,
         dfam=dfam,
         inspection=inspection,
     )
@@ -78,6 +90,8 @@ def advise(
         "mesh": mesh,
         "oriented_mesh": oriented,
         "grid": grid,
+        "fea_grid": fea_grid,
+        "fea": fea,
         "watertight": watertight,
         "orientation": orientation,
         "sim": sim,

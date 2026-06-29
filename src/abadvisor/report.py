@@ -1,10 +1,10 @@
 """Report rendering: matplotlib figures + a self-contained HTML page.
 
-Turns a pipeline result into (1) a set of PNG figures (orientation DoE, layer
-cross-section profile, cost/time breakdown, warpage contributors, and a 3D view
-of the oriented part) and (2) a single self-contained HTML report with those
-figures embedded as base64, the DfAM and inspection tables color-coded by
-severity, and the release-gate banner at the top.
+Turns a pipeline result into (1) a set of PNG figures (orientation screening,
+layer cross-section profile, cost/time breakdown, and the FEA distortion field)
+and (2) a single self-contained HTML report with those figures embedded as
+base64, the DfAM and inspection tables color-coded by severity, and the
+release-gate banner at the top.
 
 matplotlib is forced onto the non-interactive Agg backend so the report renders
 headless (CI, a server, a cron job) with no display.
@@ -43,16 +43,16 @@ _MAX_FACETS_3D = 30000
 # ---------------------------------------------------------------------------
 def _fig_orientation(orientation: Dict, path: Path) -> None:
     cands = orientation["candidates"]
-    labels = [f"({c.rx_deg:g},{c.ry_deg:g})" for c in cands]
-    scores = [c.score for c in cands]
+    labels = [c.label.replace("face ⟂ ", "") for c in cands]
+    support = [c.support_volume_mm3 / 1000.0 for c in cands]  # cm^3
     colors = ["#1b7f3b" if i == 0 else "#9bb7d4" for i in range(len(cands))]
     fig, ax = plt.subplots(figsize=(7, 3.6))
-    ax.bar(range(len(cands)), scores, color=colors)
+    ax.bar(range(len(cands)), support, color=colors)
     ax.set_xticks(range(len(cands)))
-    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("DoE objective (lower = better)")
-    ax.set_xlabel("Candidate orientation (rx, ry) deg")
-    ax.set_title("Orientation DoE — green = selected")
+    ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=7)
+    ax.set_ylabel("Support material (cm$^3$)")
+    ax.set_xlabel("Candidate face-down orientation (down-normal)")
+    ax.set_title("Orientation screening — support per candidate (green = selected)", fontsize=10)
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -94,16 +94,41 @@ def _fig_cost_time(sim, path: Path) -> None:
     plt.close(fig)
 
 
-def _fig_warpage(sim, path: Path) -> None:
-    contrib = sim.warpage_contributors
-    keys = ["area_gradient", "aspect_ratio", "overhang", "cross_section"]
-    vals = [contrib.get(k, 0.0) for k in keys]
-    colors = ["#b22222" if v >= 0.5 else "#9bb7d4" for v in vals]
-    fig, ax = plt.subplots(figsize=(7, 3.0))
-    ax.barh(keys, vals, color=colors)
-    ax.set_xlim(0, 1)
-    ax.set_xlabel("Normalized contribution (0–1)")
-    ax.set_title(f"Warpage-risk drivers — index {sim.warpage_index:.0f}/100")
+def _active_node_coords(fea, fea_grid):
+    """Node coordinates (mm) and displacement magnitude for nodes touching the part."""
+    occ = fea_grid.occ
+    nx, ny, nz = occ.shape
+    nnx, nny, nnz = nx + 1, ny + 1, nz + 1
+    active = np.zeros((nnx, nny, nnz), dtype=bool)
+    for di in (0, 1):
+        for dj in (0, 1):
+            for dk in (0, 1):
+                active[di:di + nx, dj:dj + ny, dk:dk + nz] |= occ
+    ii, jj, kk = np.nonzero(active)
+    mag = fea.disp_grid[ii, jj, kk]
+    p = fea.pitch
+    return ii * p, jj * p, kk * p, mag
+
+
+def _fig_distortion(fea, fea_grid, path: Path) -> None:
+    xs, ys, zs, mag = _active_node_coords(fea, fea_grid)
+    if xs.size == 0:
+        return
+    if xs.size > 9000:  # subsample dense grids for the scatter
+        idx = np.linspace(0, xs.size - 1, 9000).astype(int)
+        xs, ys, zs, mag = xs[idx], ys[idx], zs[idx], mag[idx]
+    fig = plt.figure(figsize=(6.0, 5.2))
+    ax = fig.add_subplot(111, projection="3d")
+    sc = ax.scatter(xs, ys, zs, c=mag, cmap="inferno", s=8, depthshade=True)
+    cb = fig.colorbar(sc, ax=ax, shrink=0.6, pad=0.1)
+    cb.set_label("distortion |u| (mm)")
+    ax.set_xlabel("x (mm)"); ax.set_ylabel("y (mm)"); ax.set_zlabel("z (mm)")
+    ax.set_title(f"Inherent-strain FEA distortion field\nmax {fea.max_displacement_mm:.3f} mm "
+                 f"· {fea.n_elements} elems · {fea.iterations} CG iters")
+    try:
+        ax.set_box_aspect((xs.ptp() or 1, ys.ptp() or 1, zs.ptp() or 1))
+    except Exception:
+        pass
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -136,13 +161,13 @@ def render_figures(result: Dict, outdir: str) -> Dict[str, str]:
         "orientation": out / "fig_orientation.png",
         "layers": out / "fig_layers.png",
         "cost_time": out / "fig_cost_time.png",
-        "warpage": out / "fig_warpage.png",
+        "distortion": out / "fig_distortion.png",
         "part3d": out / "fig_part3d.png",
     }
     _fig_orientation(result["orientation"], figs["orientation"])
     _fig_layer_profile(result["sim"], figs["layers"])
     _fig_cost_time(result["sim"], figs["cost_time"])
-    _fig_warpage(result["sim"], figs["warpage"])
+    _fig_distortion(result["fea"], result["fea_grid"], figs["distortion"])
     _fig_part3d(result["oriented_mesh"], figs["part3d"])
     return {k: str(v) for k, v in figs.items() if v.exists()}
 
@@ -196,6 +221,7 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
     rec = result["record"]
     figs = render_figures(result, outdir)
     sim = rec["simulation"]
+    fea = rec["distortion_fea"]
     gate = rec["gate"]
     part = rec["part"]
     proc = rec["process"]
@@ -206,9 +232,9 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
         ("Build time", f"{sim['build_time_h']} h"),
         ("Layers", f"{sim['n_layers']}"),
         ("Cost", f"${sim['total_cost_usd']}"),
-        ("Warpage index", f"{sim['warpage_index']}/100"),
+        ("FEA max distortion", f"{fea['max_distortion_mm']} mm"),
+        ("Peak von Mises", f"{fea['peak_von_mises_mpa']} MPa" if fea["peak_von_mises_mpa"] is not None else "—"),
         ("Volume validation", f"{sim['grid_validation']['volume_error_pct']}%"),
-        ("Watertight", "yes" if part["watertight"]["is_watertight"] else "no"),
     ]
     cards_html = "".join(
         f'<div class="card"><div class="k">{_html.escape(k)}</div><div class="v">{_html.escape(str(v))}</div></div>'
@@ -217,12 +243,12 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
 
     doe = rec["design_decision"]
     orient_rows = [
-        [c["index"], f"{c['rx_deg']:g}/{c['ry_deg']:g}", c["height_mm"], c["overhang_area_mm2"],
-         c["stability_ratio"], c["score"], "✓" if c == doe["chosen_orientation"] else ""]
+        [c["index"], c["label"].replace("face ⟂ ", ""), c["height_mm"], c["base_contact_mm2"],
+         c["support_volume_mm3"], c["score"], "✓" if c == doe["chosen_orientation"] else ""]
         for c in [doe["chosen_orientation"]] + doe["alternatives"]
     ]
     orient_tbl = _table(
-        ["#", "rx/ry°", "height mm", "overhang mm²", "stability", "score", "chosen"],
+        ["#", "down-normal", "height mm", "base contact mm²", "support mm³", "score", "chosen"],
         orient_rows,
     )
 
@@ -255,7 +281,7 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
 <div class="grid">{cards_html}</div>
 
 <div class="row">
-  <div><h2>Orientation (DoE)</h2>{_img_tag(figs.get('orientation'), embed)}{orient_tbl}</div>
+  <div><h2>Orientation</h2>{_img_tag(figs.get('orientation'), embed)}{orient_tbl}</div>
   <div><h2>Part in orientation</h2>{_img_tag(figs.get('part3d'), embed)}</div>
 </div>
 
@@ -264,7 +290,13 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
   <div>{_img_tag(figs.get('layers'), embed)}</div>
   <div>{_img_tag(figs.get('cost_time'), embed)}</div>
 </div>
-{_img_tag(figs.get('warpage'), embed)}
+
+<h2>Distortion FEA (inherent-strain method)</h2>
+<p class="sub">Linear-elastic voxel FEM: {fea['elements']} elements, {fea['dof']} DOF, solved in
+{fea['solver_iterations']} CG iterations (converged: {fea['converged']}). Eigenstrain {fea['eigenstrain']}.
+Peak distortion <b>{fea['max_distortion_mm']} mm</b>; peak von Mises
+{fea['peak_von_mises_mpa']} MPa (linear-elastic, indicative — no plasticity, so it can exceed yield).</p>
+{_img_tag(figs.get('distortion'), embed)}
 
 <h2>Manufacturability (DfAM)</h2>
 {dfam_tbl}
@@ -280,11 +312,11 @@ requires CMM: {rec['inspection_plan']['requires_cmm']} · requires CT: {rec['ins
 <ul>
   <li>machine_id <code>{_html.escape(handoff['machine_id'])}</code>, part_id <code>{_html.escape(handoff['part_id'])}</code></li>
   <li>operation <code>{_html.escape(handoff['operation'])}</code>, expected {handoff['expected_layers']} layers / {handoff['expected_build_time_h']} h</li>
-  <li>signals to watch: {_html.escape(', '.join(handoff['watch']) or 'none flagged')}</li>
+  <li>signals to watch: {_html.escape(', '.join(handoff['watch']))}</li>
 </ul>
 
-<p class="foot">Additive Build Advisor · reduced-order estimates from a coarse voxel model, not a substitute for
-process-qualified simulation. See REPORT.md for scope and limits.</p>
+<p class="foot">Additive Build Advisor · reduced-order estimates plus an inherent-strain FEA;
+representative process constants, not a melt-pool-calibrated thermo-mechanical solve. See REPORT.md for scope and limits.</p>
 </div></body></html>"""
 
     out_path = Path(outdir) / filename

@@ -64,14 +64,14 @@ def main() -> int:
         report.render_html(result, str(outdir))
         sim = rec["simulation"]
         rows.append((part, process, sim["build_time_h"], sim["total_cost_usd"],
-                     sim["warpage_index"], rec["manufacturability"]["worst_severity"],
-                     rec["gate"]["decision"]))
+                     rec["distortion_fea"]["max_distortion_mm"],
+                     rec["manufacturability"]["worst_severity"], rec["gate"]["decision"]))
         print(f"  [{part} / {process}] -> {rec['gate']['decision']}   (report: {outdir/'report.html'})")
 
     print("\n  Summary")
-    print(f"  {'part':18s} {'process':14s} {'time_h':>7s} {'cost$':>8s} {'warp':>5s} {'dfam':>9s}  gate")
+    print(f"  {'part':18s} {'process':14s} {'time_h':>7s} {'cost$':>8s} {'distort_mm':>10s} {'dfam':>9s}  gate")
     for r in rows:
-        print(f"  {r[0]:18s} {r[1]:14s} {r[2]:7.2f} {r[3]:8.2f} {r[4]:5.0f} {r[5]:>9s}  {r[6]}")
+        print(f"  {r[0]:18s} {r[1]:14s} {r[2]:7.2f} {r[3]:8.2f} {r[4]:10.3f} {r[5]:>9s}  {r[6]}")
     return 0
 
 

@@ -1,17 +1,23 @@
-"""Build-orientation selection as a design-of-experiments (DoE) sweep.
+"""Build-orientation selection by resting the part on candidate flat faces.
 
-Orientation is the single highest-leverage decision in additive manufacturing:
-it sets how much support is needed, how tall (and therefore how slow) the build
-is, how stable the part is on the plate, and which surfaces end up rough. So we
-treat it as a small DoE -- a full factorial over two rotation factors -- and
-score every candidate against a transparent, weighted objective.
+Orientation is the highest-leverage decision in additive manufacturing, so it
+deserves a physically meaningful search rather than an arbitrary angle sweep. We
+generate candidates the way an engineer does -- *which face goes down on the
+plate* -- by clustering the mesh's facet normals into its significant flat faces
+and adding the six bounding-box directions as a fallback. Each candidate rests a
+real face on the plate, so there are no degenerate edge-balanced orientations.
 
-Scoring uses only *analytic facet metrics* (overhang area from face normals,
-bounding-box height, footprint, center-of-mass height). These are cheap, so we
-can evaluate the whole design space quickly; the expensive voxel simulation
-then runs once, on the winning orientation. That two-tier structure -- screen
-cheaply, simulate the survivor -- is the same DoE discipline used to keep
-physical experiment counts down.
+Each candidate is then scored on quantities that actually matter, measured from
+a coarse voxelization of that orientation:
+
+* **support material volume** -- the dominant cost/quality driver (minimize);
+* **base contact area** -- a large flat footprint means good adhesion and
+  stability (maximize); a tiny contact patch is penalized;
+* **build height** -- drives build time (minimize);
+
+with a hard penalty for any orientation that does not fit the build volume. The
+cheap coarse voxelization screens the whole candidate set; the full-resolution
+simulation and FEA then run once, on the winner.
 """
 
 from __future__ import annotations
@@ -21,70 +27,108 @@ from typing import Dict, List, Sequence
 
 import numpy as np
 
-from .geometry import Mesh, rotation_about_axis
+from .geometry import Mesh, _rotation_between
 from .materials import ProcessProfile
+from .voxelize import support_estimate, voxelize
 
-_DEFAULT_LEVELS = (0.0, 45.0, 90.0, 135.0)
+ORIENT_GRID_N = 28  # coarse grid for screening candidate orientations
 
-# Objective weights (lower score is better). Support dominates because it drives
-# both cost and down-facing surface quality; height drives build time; stability
-# guards against tall, tippy builds.
-_W_SUPPORT = 0.50
-_W_HEIGHT = 0.30
-_W_STABILITY = 0.20
+# Objective weights (lower score is better).
+_W_SUPPORT = 0.45
+_W_CONTACT = 0.35
+_W_HEIGHT = 0.20
+
+_DOWN = np.array([0.0, 0.0, -1.0])
 
 
 @dataclass
 class OrientationCandidate:
     index: int
-    rx_deg: float
-    ry_deg: float
+    down_dir: tuple                 # mesh direction (in original frame) now facing down
+    label: str
     rotation: np.ndarray = field(repr=False)
     height_mm: float
     footprint_mm2: float
-    footprint_dims_mm: tuple
-    overhang_area_mm2: float
-    com_height_mm: float
-    stability_ratio: float          # COM height / min footprint dim (higher = tippier)
+    base_contact_mm2: float
+    contact_fraction: float
+    support_volume_mm3: float
     fits_build_volume: bool
     score: float = 0.0
 
     def summary(self) -> Dict[str, object]:
         return {
             "index": self.index,
-            "rx_deg": self.rx_deg,
-            "ry_deg": self.ry_deg,
+            "down_dir": [round(float(v), 3) for v in self.down_dir],
+            "label": self.label,
             "height_mm": round(self.height_mm, 3),
-            "footprint_mm2": round(self.footprint_mm2, 2),
-            "overhang_area_mm2": round(self.overhang_area_mm2, 2),
-            "stability_ratio": round(self.stability_ratio, 3),
-            "fits_build_volume": self.fits_build_volume,
+            "base_contact_mm2": round(self.base_contact_mm2, 1),
+            "contact_fraction": round(self.contact_fraction, 3),
+            "support_volume_mm3": round(self.support_volume_mm3, 1),
+            "fits_build_volume": bool(self.fits_build_volume),
             "score": round(self.score, 4),
         }
 
 
-def _evaluate(mesh: Mesh, profile: ProcessProfile, rx: float, ry: float, index: int) -> OrientationCandidate:
-    rot = rotation_about_axis([0, 1, 0], ry) @ rotation_about_axis([1, 0, 0], rx)
-    oriented = mesh.transformed(rot).dropped_to_plate()
+def _candidate_down_directions(mesh: Mesh, max_faces: int = 8) -> List[np.ndarray]:
+    """Down-direction candidates: significant flat-face normals + the 6 bbox axes."""
+    normals = mesh.face_normals
+    areas = mesh.face_areas
+    # cluster facets by rounded normal, accumulate area
+    keys = np.round(normals, 2)
+    buckets: Dict[tuple, list] = {}
+    for n, a, k in zip(normals, areas, map(tuple, keys)):
+        if k not in buckets:
+            buckets[k] = [a, n * a]
+        else:
+            buckets[k][0] += a
+            buckets[k][1] = buckets[k][1] + n * a
+    ranked = sorted(buckets.values(), key=lambda v: -v[0])
+    max_area = ranked[0][0] if ranked else 1.0
+    dirs: List[np.ndarray] = []
+    for area, area_weighted_normal in ranked[:max_faces]:
+        if area < 0.03 * max_area:
+            break
+        d = area_weighted_normal / (np.linalg.norm(area_weighted_normal) or 1.0)
+        dirs.append(d)  # this face's outward normal -> point it DOWN
+    # always include the 6 axis directions for coverage
+    for ax in ([1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]):
+        dirs.append(np.array(ax, dtype=float))
+    # dedupe by rounded direction
+    seen = set()
+    unique: List[np.ndarray] = []
+    for d in dirs:
+        key = tuple(np.round(d, 2))
+        if key not in seen:
+            seen.add(key)
+            unique.append(d)
+    return unique
 
+
+def _evaluate(mesh: Mesh, profile: ProcessProfile, down_dir: np.ndarray, index: int) -> OrientationCandidate:
+    rot = _rotation_between(down_dir, _DOWN)
+    oriented = mesh.transformed(rot).dropped_to_plate()
     ext = oriented.extents
     height = float(ext[2])
-    footprint_dims = (float(ext[0]), float(ext[1]))
-    footprint = footprint_dims[0] * footprint_dims[1]
-    overhang = oriented.overhang_area_mm2(profile.self_support_angle_deg)
-    com = oriented.center_of_mass
-    com_height = float(com[2])
-    min_foot = max(min(footprint_dims), 1e-6)
-    stability = com_height / min_foot
+    footprint = float(ext[0] * ext[1])
+
+    grid = voxelize(oriented, grid_n=ORIENT_GRID_N)
+    base_contact = float(grid.occ[:, :, 0].sum()) * grid.cell_area_mm2
+    support = support_estimate(grid, profile.support_infill_frac)["support_material_mm3"]
+    if profile.support_infill_frac == 0.0:
+        # self-supporting process: use the geometric overhang need so orientation
+        # still distinguishes, but de-weighted (handled by small envelope numbers)
+        support = profile.support_infill_frac  # 0; orientation driven by height+contact
 
     bv = profile.build_volume_mm
     fits = ext[0] <= bv[0] and ext[1] <= bv[1] and ext[2] <= bv[2]
+    contact_frac = base_contact / footprint if footprint > 0 else 0.0
 
+    label = f"face ⟂ ({down_dir[0]:+.2f}, {down_dir[1]:+.2f}, {down_dir[2]:+.2f})"
     return OrientationCandidate(
-        index=index, rx_deg=rx, ry_deg=ry, rotation=rot,
-        height_mm=height, footprint_mm2=footprint, footprint_dims_mm=footprint_dims,
-        overhang_area_mm2=overhang, com_height_mm=com_height,
-        stability_ratio=stability, fits_build_volume=fits,
+        index=index, down_dir=tuple(float(v) for v in down_dir), label=label,
+        rotation=rot, height_mm=height, footprint_mm2=footprint,
+        base_contact_mm2=base_contact, contact_fraction=contact_frac,
+        support_volume_mm3=float(support), fits_build_volume=fits,
     )
 
 
@@ -96,47 +140,38 @@ def _normalize(values: Sequence[float]) -> np.ndarray:
     return (arr - lo) / (hi - lo)
 
 
-def optimize_orientation(
-    mesh: Mesh,
-    profile: ProcessProfile,
-    levels: Sequence[float] = _DEFAULT_LEVELS,
-) -> Dict[str, object]:
-    """Run the orientation DoE and return ranked candidates plus the winner."""
-    candidates: List[OrientationCandidate] = []
-    idx = 0
-    for rx in levels:
-        for ry in levels:
-            candidates.append(_evaluate(mesh, profile, rx, ry, idx))
-            idx += 1
+def optimize_orientation(mesh: Mesh, profile: ProcessProfile, **_) -> Dict[str, object]:
+    """Screen rest-on-face orientations; return ranked candidates and the winner."""
+    dirs = _candidate_down_directions(mesh)
+    candidates = [_evaluate(mesh, profile, d, i) for i, d in enumerate(dirs)]
 
-    # de-duplicate orientations that are physically identical (same metrics)
+    # dedupe physically identical orientations (same screened metrics)
     seen = {}
     distinct: List[OrientationCandidate] = []
     for c in candidates:
-        key = (round(c.height_mm, 3), round(c.footprint_mm2, 1), round(c.overhang_area_mm2, 1))
+        key = (round(c.height_mm, 2), round(c.base_contact_mm2, 1), round(c.support_volume_mm3, 1))
         if key not in seen:
             seen[key] = True
             distinct.append(c)
 
-    n_over = _normalize([c.overhang_area_mm2 for c in distinct])
+    n_support = _normalize([c.support_volume_mm3 for c in distinct])
     n_height = _normalize([c.height_mm for c in distinct])
-    n_stab = _normalize([c.stability_ratio for c in distinct])
-    for c, o, h, s in zip(distinct, n_over, n_height, n_stab):
-        penalty = 0.0 if c.fits_build_volume else 1.0  # hard push to the bottom
-        c.score = float(_W_SUPPORT * o + _W_HEIGHT * h + _W_STABILITY * s + penalty)
+    contact_pen = [1.0 - c.contact_fraction for c in distinct]  # already in [0,1]
+    for c, s, h, cp in zip(distinct, n_support, n_height, contact_pen):
+        penalty = 0.0 if c.fits_build_volume else 1.0
+        c.score = float(_W_SUPPORT * s + _W_HEIGHT * h + _W_CONTACT * cp + penalty)
 
     distinct.sort(key=lambda c: c.score)
     best = distinct[0]
-
     return {
         "best": best,
         "candidates": distinct,
         "design": {
-            "factors": ["rx_deg", "ry_deg"],
-            "levels": list(levels),
-            "n_evaluated": len(candidates),
+            "method": "rest-on-face screening",
+            "n_candidates": len(candidates),
             "n_distinct": len(distinct),
-            "weights": {"support": _W_SUPPORT, "height": _W_HEIGHT, "stability": _W_STABILITY},
+            "screen_grid_n": ORIENT_GRID_N,
+            "weights": {"support": _W_SUPPORT, "contact": _W_CONTACT, "height": _W_HEIGHT},
             "self_support_angle_deg": profile.self_support_angle_deg,
         },
     }

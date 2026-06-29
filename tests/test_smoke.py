@@ -67,13 +67,38 @@ def test_hollow_housing_has_trapped_volume():
     assert trapped_volume(g)["trapped_volume_mm3"] > 100.0
 
 
-def test_orientation_reduces_overhang():
+def test_orientation_rests_on_a_face():
+    # The chosen orientation should rest on a real flat face (large contact
+    # fraction), fit the build volume, and not be the highest-support candidate.
     mesh = shapes.gantry_bracket()
     res = advise(mesh=mesh, process="fff_pla", grid_n=32)
     cands = res["orientation"]["candidates"]
     best = res["orientation"]["best"]
-    worst = max(cands, key=lambda c: c.overhang_area_mm2)
-    assert best.overhang_area_mm2 <= worst.overhang_area_mm2
+    assert best.fits_build_volume
+    assert best.contact_fraction >= 0.5
+    assert best.support_volume_mm3 <= max(c.support_volume_mm3 for c in cands)
+    # for this bracket a large flat face gives a no-support orientation
+    assert best.support_volume_mm3 <= min(c.support_volume_mm3 for c in cands) + 1e-6
+
+
+def test_fea_matches_analytical_bar():
+    # Clamped prismatic bar, uniform eigenstrain: top displacement ~ |eps|*H.
+    import numpy as np
+    from abadvisor.fea import solve_inherent_strain
+    H, eps = 30, -0.01
+    occ = np.ones((4, 4, H), dtype=bool)
+    r = solve_inherent_strain(occ, pitch=1.0, E=70000.0, nu=0.33, eigenstrain=eps, tol=1e-8)
+    analytic = abs(eps) * H
+    assert r.converged
+    assert abs(r.max_displacement_mm - analytic) / analytic < 0.10
+
+
+def test_fea_distortion_in_record():
+    r = advise(mesh=shapes.gantry_bracket(), process="lpbf_ti64", grid_n=32, fea_grid_n=18)
+    d = r["record"]["distortion_fea"]
+    assert d["max_distortion_mm"] > 0
+    assert d["converged"] is True
+    assert d["peak_von_mises_mpa"] is not None
 
 
 def test_gate_outcomes():

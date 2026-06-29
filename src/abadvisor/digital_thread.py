@@ -26,6 +26,7 @@ from typing import Dict, List
 import numpy as np
 
 from .am_sim import BuildSimulation
+from .fea import FEAResult
 from .geometry import Mesh
 from .materials import ProcessProfile
 
@@ -119,6 +120,7 @@ def build_record(
     profile: ProcessProfile,
     orientation: Dict[str, object],
     sim: BuildSimulation,
+    fea: "FEAResult",
     dfam: Dict[str, object],
     inspection: Dict[str, object],
 ) -> Dict[str, object]:
@@ -162,7 +164,6 @@ def build_record(
         },
         "simulation": {
             **sim.summary(),
-            "warpage_contributors": sim.warpage_contributors,
             "build_time_breakdown_h": {
                 "deposition": round(sim.deposition_time_h, 3),
                 "layer_overhead": round(sim.overhead_time_h, 3),
@@ -177,6 +178,18 @@ def build_record(
                 "volume_error_pct": round(sim.volume_error_pct, 3),
             },
         },
+        "distortion_fea": {
+            "method": "inherent-strain linear-elastic voxel FEM",
+            "eigenstrain": fea.eigenstrain,
+            "max_distortion_mm": round(fea.max_displacement_mm, 4),
+            "mean_distortion_mm": round(fea.mean_displacement_mm, 4),
+            "peak_von_mises_mpa": (round(fea.peak_von_mises_mpa, 1)
+                                   if fea.peak_von_mises_mpa is not None else None),
+            "elements": fea.n_elements,
+            "dof": fea.n_dof,
+            "solver_iterations": fea.iterations,
+            "converged": fea.converged,
+        },
         "manufacturability": dfam,
         "inspection_plan": inspection,
         "gate": gate,
@@ -190,8 +203,8 @@ def build_record(
                 "operation": f"additive_{profile.family.lower()}",
                 "expected_layers": sim.n_layers,
                 "expected_build_time_h": round(sim.total_time_h, 2),
-                "watch": [k for k, v in sim.warpage_contributors.items()
-                          if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0.5],
+                "watch": ([f["check"] for f in dfam["findings"]
+                           if f["severity"] in ("warning", "critical")] or ["nominal"]),
             },
         },
     }

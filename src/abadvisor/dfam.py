@@ -18,6 +18,7 @@ from dataclasses import dataclass, asdict
 from typing import Dict, List
 
 from .am_sim import BuildSimulation
+from .fea import FEAResult
 from .geometry import Mesh
 from .materials import ProcessProfile
 from .voxelize import VoxelGrid, thin_wall_analysis, trapped_volume
@@ -52,6 +53,7 @@ def run_dfam(
     grid: VoxelGrid,
     sim: BuildSimulation,
     profile: ProcessProfile,
+    fea: FEAResult,
     orientation_fits: bool = True,
 ) -> Dict[str, object]:
     findings: List[Finding] = []
@@ -144,20 +146,24 @@ def run_dfam(
         "trapped_volume", sev, msg, value=trapped_frac, limit=0.005, recommendation=rec,
     ))
 
-    # 6) Warpage risk (from the build simulation) ------------------------
-    if sim.warpage_index > 80:
+    # 6) Warpage / distortion (from the inherent-strain FEA) -------------
+    char_len = max(sim.height_mm, *sim.footprint_dims_mm, 1e-6)
+    distortion_ratio = fea.max_displacement_mm / char_len
+    if distortion_ratio > 0.020:
         sev = "critical"
-    elif sim.warpage_index > 60:
+    elif distortion_ratio > 0.010:
         sev = "warning"
-    elif sim.warpage_index > 35:
+    elif distortion_ratio > 0.004:
         sev = "info"
     else:
         sev = "ok"
     findings.append(Finding(
-        "warpage_risk", sev,
-        f"Reduced-order warpage index is {sim.warpage_index:.0f}/100.",
-        value=sim.warpage_index, limit=60.0,
-        recommendation="Run a thermo-mechanical simulation and consider stress relief / orientation change."
+        "distortion", sev,
+        f"FEA predicts {fea.max_displacement_mm:.3f} mm peak distortion "
+        f"({distortion_ratio*100:.2f}% of the part's largest dimension).",
+        value=distortion_ratio, limit=0.010,
+        recommendation="Add stress relief / a stout base, re-orient to shorten unsupported spans, "
+        "or compensate the geometry."
         if sev in ("warning", "critical") else "None.",
     ))
 

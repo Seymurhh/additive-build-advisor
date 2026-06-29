@@ -59,6 +59,14 @@ class ProcessProfile:
     needs_drain_holes: bool                # trapped fluid (resin) or powder must escape
     post_processing: List[str] = field(default_factory=list)
 
+    # Mechanical properties for the distortion FEA (inherent-strain method).
+    # ``inherent_strain`` is the representative isotropic shrinkage eigenstrain
+    # used to drive the warpage solve (negative = contraction). These are
+    # illustrative per-process values, not melt-pool-calibrated constants.
+    youngs_modulus_mpa: float = 3000.0
+    poisson_ratio: float = 0.35
+    inherent_strain: float = -0.006
+
     @property
     def density_g_mm3(self) -> float:
         return self.density_g_cm3 / 1000.0
@@ -87,6 +95,9 @@ _PROFILES: Dict[str, ProcessProfile] = {
             recoat_time_s_per_layer=1.5,
             needs_drain_holes=False,
             post_processing=["support removal", "optional sanding"],
+            youngs_modulus_mpa=3500.0,
+            poisson_ratio=0.36,
+            inherent_strain=-0.006,
         ),
         ProcessProfile(
             key="fff_abs",
@@ -108,6 +119,9 @@ _PROFILES: Dict[str, ProcessProfile] = {
             recoat_time_s_per_layer=1.5,
             needs_drain_holes=False,
             post_processing=["support removal", "vapor smoothing (optional)"],
+            youngs_modulus_mpa=2200.0,
+            poisson_ratio=0.35,
+            inherent_strain=-0.012,
         ),
         ProcessProfile(
             key="sls_pa12",
@@ -129,6 +143,9 @@ _PROFILES: Dict[str, ProcessProfile] = {
             recoat_time_s_per_layer=9.0,
             needs_drain_holes=True,  # trapped powder must escape
             post_processing=["depowder", "bead blast", "optional dye"],
+            youngs_modulus_mpa=1700.0,
+            poisson_ratio=0.4,
+            inherent_strain=-0.004,
         ),
         ProcessProfile(
             key="sla_resin",
@@ -150,6 +167,9 @@ _PROFILES: Dict[str, ProcessProfile] = {
             recoat_time_s_per_layer=7.0,
             needs_drain_holes=True,  # trapped resin / suction cups
             post_processing=["support removal", "wash (IPA)", "UV cure"],
+            youngs_modulus_mpa=2800.0,
+            poisson_ratio=0.4,
+            inherent_strain=-0.003,
         ),
         ProcessProfile(
             key="lpbf_alsi10mg",
@@ -171,6 +191,9 @@ _PROFILES: Dict[str, ProcessProfile] = {
             recoat_time_s_per_layer=9.0,
             needs_drain_holes=False,
             post_processing=["stress relief", "wire-EDM off plate", "support machining"],
+            youngs_modulus_mpa=70000.0,
+            poisson_ratio=0.33,
+            inherent_strain=-0.008,
         ),
         ProcessProfile(
             key="lpbf_ti64",
@@ -192,6 +215,9 @@ _PROFILES: Dict[str, ProcessProfile] = {
             recoat_time_s_per_layer=10.0,
             needs_drain_holes=False,
             post_processing=["stress relief", "HIP (optional)", "wire-EDM off plate", "support machining"],
+            youngs_modulus_mpa=110000.0,
+            poisson_ratio=0.34,
+            inherent_strain=-0.01,
         ),
     ]
 }

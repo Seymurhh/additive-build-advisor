@@ -26,14 +26,18 @@ def _load_tolerances(path):
 
 def _print_summary(rec) -> None:
     sim = rec["simulation"]
+    fea = rec["distortion_fea"]
     gate = rec["gate"]
     print(f"\n  Part         : {rec['part']['name']}  (geometry id {rec['part']['geometry_hash']})")
     print(f"  Process      : {rec['process']['name']}")
     o = rec["design_decision"]["chosen_orientation"]
-    print(f"  Orientation  : rx={o['rx_deg']:g} ry={o['ry_deg']:g}  "
-          f"height={o['height_mm']} mm  overhang={o['overhang_area_mm2']} mm^2")
+    print(f"  Orientation  : {o['label']}  height={o['height_mm']} mm  "
+          f"base contact={o['base_contact_mm2']} mm^2  support={o['support_volume_mm3']} mm^3")
     print(f"  Simulation   : {sim['part_volume_cm3']} cm^3, {sim['n_layers']} layers, "
-          f"{sim['build_time_h']} h, ${sim['total_cost_usd']}, warpage {sim['warpage_index']}/100")
+          f"{sim['build_time_h']} h, ${sim['total_cost_usd']}")
+    print(f"  Distortion   : FEA peak {fea['max_distortion_mm']} mm "
+          f"({fea['elements']} elems, {fea['solver_iterations']} CG iters), "
+          f"peak von Mises {fea['peak_von_mises_mpa']} MPa")
     print(f"  Validation   : voxel/mesh volume error {sim['grid_validation']['volume_error_pct']}%")
     print(f"  DfAM         : worst={rec['manufacturability']['worst_severity']}  "
           f"(critical={rec['manufacturability']['n_critical']}, warning={rec['manufacturability']['n_warning']})")

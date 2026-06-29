@@ -1,13 +1,13 @@
 # Additive Build Advisor
 
 A design-to-inspection **digital thread** for additive manufacturing. It takes a
-part geometry (STL), decides how to build it, simulates the build, checks
-whether it can actually be made and measured, and emits one auditable record
-with an explicit **release gate** — `release_to_build`, `needs_engineering_review`,
-or `redesign_required`.
+part geometry (STL), decides how to build it, simulates the build, runs a
+finite-element **distortion analysis**, checks whether the part can actually be
+made and measured, and emits one auditable record with an explicit **release
+gate** — `release_to_build`, `needs_engineering_review`, or `redesign_required`.
 
-For the full technical write-up — engine validation, the warpage model, and
-honest limits — see [REPORT.md](REPORT.md).
+For the full technical write-up — the FEA formulation, validation, and honest
+limits — see [REPORT.md](REPORT.md).
 
 ## What it does
 
@@ -16,22 +16,27 @@ engineer runs before committing a build:
 
 1. **Recover the geometry** — parse the STL from scratch, recompute normals from
    winding, and check the mesh is watertight before trusting it.
-2. **Choose an orientation** — a small design-of-experiments (DoE) sweep scores
-   candidate orientations on support area, build height, and stability.
+2. **Choose an orientation** — screen "rest on a flat face" orientations (the
+   part's own flat faces plus the bounding-box directions) and score each on
+   *actual support volume*, base-contact area, and build height.
 3. **Simulate the build** — voxelize the part by ray-stabbing, then estimate
-   layer count, support volume, build time, material, cost, and a reduced-order
-   warpage-risk index.
-4. **Check manufacturability (DfAM)** — thin walls, support burden, aspect ratio,
-   and trapped powder/resin (enclosed voids found by flood fill).
-5. **Plan inspection** — turn the part's tolerances into a first-article
-   inspection plan, picking measurement methods and flagging tolerances the
-   process cannot hold as-built.
-6. **Gate the release** — assemble a machine-readable digital-thread record and
+   layer count, support volume, build time, material, and cost.
+4. **Analyze distortion (FEA)** — a linear-elastic voxel finite-element solve
+   using the **inherent-strain method**: each element carries a thermal
+   eigenstrain, the base is clamped to the plate, and the predicted distortion
+   field is solved matrix-free. This is what tools like Netfabb / ANSYS Additive
+   do for fast distortion screening.
+5. **Check manufacturability (DfAM)** — thin walls, support burden, aspect ratio,
+   distortion, and trapped powder/resin (enclosed voids found by flood fill).
+6. **Plan inspection** — turn the part's tolerances into a first-article
+   inspection plan, flagging tolerances the process cannot hold as-built.
+7. **Gate the release** — assemble a machine-readable digital-thread record and
    decide whether the build can proceed, with the reasons attached.
 
-The geometry, voxelization, DoE, and build simulation are written from first
-principles on top of `numpy` — no CAD kernel — so every engineering decision is
-readable and defensible. `matplotlib` only renders the report.
+The geometry kernel, STL parser, voxelizer, orientation search, build simulation
+**and the FEA solver** are written from first principles on top of `numpy` — no
+CAD kernel, no FEM package — so every engineering decision is legible and
+defensible. `matplotlib` only renders the report.
 
 ## Where this sits: the digital thread
 
@@ -47,9 +52,10 @@ flowchart LR
     CAD["CAD / STL geometry"] --> ABA
     subgraph ABA["Additive Build Advisor (this repo)"]
       direction TB
-      G["geometry + watertight check"] --> O["orientation DoE"]
+      G["geometry + watertight check"] --> O["orientation screening"]
       O --> V["voxelize → build simulation"]
-      V --> D["DfAM checks"]
+      V --> F["distortion FEA\n(inherent strain)"]
+      F --> D["DfAM checks"]
       D --> I["inspection plan"]
       I --> R["release gate + digital-thread record"]
     end
@@ -69,6 +75,9 @@ python examples/make_sample_parts.py
 
 # 2) run the three demo scenarios (writes output/<part>__<process>/report.html)
 python examples/run_example.py
+
+# 3) (optional) reproduce the FEA validation figure
+python examples/validate_fea.py
 ```
 
 Or run a single part through the CLI:
@@ -86,26 +95,24 @@ Each run writes a `digital_thread.json` record and a self-contained
 
 ## What a run produces
 
-Every run writes a self-contained `report.html`. A few of its figures, for the
-sample bracket on FFF:
-
-| Orientation DoE | Part in chosen orientation | Per-layer cross-section |
+| Orientation screening | Part in chosen orientation | Distortion FEA field |
 |---|---|---|
-| ![orientation DoE](docs/orientation_doe.png) | ![part in orientation](docs/part_orientation.png) | ![layer profile](docs/layer_profile.png) |
+| ![orientation](docs/orientation.png) | ![part in orientation](docs/part_orientation.png) | ![distortion FEA](docs/distortion.png) |
 
-The DoE selects the green orientation (a 45° tilt that takes the flange's flat
-overhang to zero); the layer plot is the simulated cross-section vs build height,
-with support shaded.
+The orientation step rests the bracket on its large flat back face (full base
+contact, **zero support**); the FEA distortion field is near zero at the clamped
+base and rises toward the free corners — the corner-lift that drives real
+additive distortion.
 
 ## Sample results
 
 The example runner exercises all three gate outcomes (numbers from a real run):
 
-| Part | Process | Build time | Cost | Warpage | DfAM | Gate |
+| Part | Process | Build time | Cost | FEA distortion | DfAM | Gate |
 |---|---|--:|--:|--:|---|---|
-| calibration_cube | FFF (PLA) | 0.78 h | $4.16 | 14 | ok | **release_to_build** |
-| gantry_bracket | FFF (PLA) | 1.04 h | $5.55 | 21 | ok | **needs_engineering_review** |
-| hollow_housing | SLA (resin) | 2.57 h | $22.32 | 10 | critical | **redesign_required** |
+| calibration_cube | FFF (PLA) | 0.71 h | $3.79 | 0.158 mm | ok | **release_to_build** |
+| gantry_bracket | FFF (PLA) | 0.80 h | $4.24 | 0.302 mm | ok | **needs_engineering_review** |
+| hollow_housing | SLA (resin) | 1.94 h | $17.16 | 0.101 mm | critical | **redesign_required** |
 
 - The **bracket** prints cleanly, but a ±0.05 mm tolerance and a 3.2 µm finish
   are below FFF as-built capability, so it is routed to engineering review for
@@ -113,25 +120,20 @@ The example runner exercises all three gate outcomes (numbers from a real run):
 - The **housing** has a fully enclosed cavity; on SLA that traps resin, so it is
   blocked for redesign (add drain holes).
 
-## Why this fits Autodesk Research
+## Validation
 
-The Manufacturing Industry Futures role is about connecting **design,
-simulation, fabrication, and inspection** with practical AI and a digital
-thread. This prototype is intentionally small but reflects that loop end to end:
-geometry in, a model-based build simulation, manufacturability and inspection
-reasoning, and a gated, auditable decision that flows downstream to runtime
-monitoring. It leans on the manufacturing fundamentals the role cares about —
-additive process physics (overhangs, support, warpage), DfAM, GD&T, and
-process capability — rather than a black-box model.
+Two engines are validated against ground truth, and the report surfaces both:
 
-## Engine validation
+- **Voxel volume** vs analytic geometry: an axis-aligned cube discretizes
+  exactly, an off-axis rotated part converges to within ~0.1%, a known enclosed
+  cavity is recovered to within ~2%.
+- **Distortion FEA** vs the analytical clamped-bar solution (top displacement
+  = |eigenstrain|·height): the FEA converges to it under mesh refinement, and
+  predicted distortion scales **linearly with eigenstrain** and is independent of
+  Young's modulus — exactly as linear-elastic theory requires for an
+  eigenstrain-only load.
 
-A simulation is only as trustworthy as its discretization, so the voxel engine
-is validated against analytic geometry: an axis-aligned cube discretizes to its
-exact volume, an off-axis rotated part converges to within ~0.1%, and a known
-enclosed cavity is recovered to within ~2%. The volume error is reported in
-every run, and a large error pulls the gate's simulation-confidence down. See
-[REPORT.md](REPORT.md#engine-validation).
+![FEA validation](docs/fea_validation.png)
 
 ## Project structure
 
@@ -141,17 +143,18 @@ additive-build-advisor/
     stl_io.py          # STL read/write (binary + ASCII), from scratch
     geometry.py        # mesh metrics, normals, watertight check, transforms
     voxelize.py        # ray-stabbing voxelization + support/thin-wall/trapped analyses
-    orientation.py     # DoE orientation optimizer
-    am_sim.py          # build simulation: layers, support, time, cost, warpage
+    orientation.py     # rest-on-face orientation screening (support + contact + height)
+    am_sim.py          # build simulation: layers, support, time, cost
+    fea.py             # inherent-strain linear-elastic voxel FEM (matrix-free CG)
     dfam.py            # design-for-additive-manufacturing checks
     inspection.py      # tolerance spec -> inspection plan + capability check
     digital_thread.py  # record assembly + release gate + JSON
     report.py          # matplotlib figures + self-contained HTML
-    materials.py       # process/material library (FFF, SLA, SLS, LPBF)
+    materials.py       # process/material library (FFF, SLA, SLS, LPBF) incl. elastic props
     shapes.py          # parametric sample-part generator
     pipeline.py        # end-to-end orchestration
     cli.py             # command-line entry point
-  examples/            # sample-part generator, tolerance specs, demo runner
+  examples/            # sample-part generator, tolerance specs, demo + FEA-validation runners
   data/                # generated sample STLs
   tests/               # smoke + validation tests (pytest or `python tests/test_smoke.py`)
 ```
@@ -160,11 +163,13 @@ additive-build-advisor/
 
 This is a compact prototype that demonstrates the workflow and the engineering
 judgment, not a production build processor. The voxel model is reduced-order;
-the warpage index is an explicit heuristic, not FEA; and the material/machine
-numbers are representative defaults, not OEM-qualified profiles. REPORT.md lists
-exactly what a production version would add — a proper slicer, a thermo-mechanical
-solver, qualified process profiles, and a real CAD/CAM integration (e.g., Fusion
-or STEP) feeding the same record schema.
+the distortion FEA is a genuine linear-elastic solve but uses the **inherent-
+strain method with representative per-process eigenstrains**, not a melt-pool-
+calibrated transient thermo-mechanical solve; and the material/machine numbers
+are representative defaults, not OEM-qualified profiles. REPORT.md lists exactly
+what a production version would add — a proper slicer, a calibrated transient
+thermo-mechanical solver, qualified process profiles, and a real CAD/CAM
+integration (e.g., Fusion or STEP) feeding the same record schema.
 
 ## License
 
