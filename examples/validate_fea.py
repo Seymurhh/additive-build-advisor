@@ -26,6 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+from abadvisor import report as _report  # noqa: E402,F401  (applies publication style)
 from abadvisor import shapes  # noqa: E402
 from abadvisor.fea import solve_inherent_strain  # noqa: E402
 from abadvisor.materials import list_profiles  # noqa: E402
@@ -56,12 +57,23 @@ def main() -> int:
         dist.append(r["record"]["distortion_fea"]["max_distortion_mm"])
         print(f"  {prof.name:28s} eps*={prof.inherent_strain:+.3f}  ->  {dist[-1]:.3f} mm")
 
+    # ---- 3. recognized benchmark geometry (NIST AM-Bench cantilever) --
+    cant = advise(mesh=shapes.cantilever_benchmark(), process="lpbf_in625", grid_n=40, fea_grid_n=22)
+    cd = cant["record"]["distortion_fea"]
+    print("\nNIST AM-Bench-style single cantilever (IN625, LPBF):")
+    print(f"  predicted ON-PLATE peak distortion {cd['max_distortion_mm']:.3f} mm "
+          f"(part still bonded to the plate).")
+    print("  NOTE: the NIST AMB2018-01 measurement (~1.0-1.3 mm) is the POST-RELEASE")
+    print("  deflection after the part is EDM-cut from the plate -- a different,")
+    print("  larger quantity that this static on-plate model does not simulate.")
+    print("  Reproducing it needs a release/cutting step + calibrated inherent strain.")
+
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.2))
     a1.axhline(0.0, color="#888", lw=1, ls="--", label="analytical")
     a1.plot(pitches, errs, "o-", color="#2c6fbb")
     a1.set_xlabel("voxel pitch (mm)")
     a1.set_ylabel("error vs analytical (%)")
-    a1.set_title("Clamped-bar convergence\n(FEA → analytical |ε*|·H as mesh refines)")
+    a1.set_title("Clamped-bar convergence\n(FEA error vs analytical |eps*|*H as mesh refines)")
     a1.invert_xaxis()
     a1.grid(alpha=0.3)
 

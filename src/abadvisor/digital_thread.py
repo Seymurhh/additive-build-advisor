@@ -180,6 +180,9 @@ def build_record(
         },
         "distortion_fea": {
             "method": "inherent-strain linear-elastic voxel FEM",
+            "target_process": "metal LPBF",
+            "applicability": ("calibrated regime (metal PBF)" if profile.family == "LPBF"
+                              else f"indicative only — inherent-strain targets metal PBF, not {profile.family}"),
             "eigenstrain": fea.eigenstrain,
             "max_distortion_mm": round(fea.max_displacement_mm, 4),
             "mean_distortion_mm": round(fea.mean_displacement_mm, 4),

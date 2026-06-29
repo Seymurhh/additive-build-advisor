@@ -22,7 +22,45 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: E402
+from matplotlib.cm import ScalarMappable  # noqa: E402
+from matplotlib.colors import Normalize  # noqa: E402
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection  # noqa: E402
+
+# Publication ("Nature"-style) figure defaults: clean sans-serif, light spines,
+# no chartjunk, restrained palette, generous DPI.
+plt.rcParams.update({
+    "figure.dpi": 140,
+    "savefig.dpi": 140,
+    "savefig.bbox": "tight",
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Helvetica", "Arial", "TeX Gyre Heros", "DejaVu Sans"],
+    "font.size": 9,
+    "axes.titlesize": 10,
+    "axes.titleweight": "bold",
+    "axes.labelsize": 9,
+    "axes.linewidth": 0.7,
+    "axes.edgecolor": "#333333",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.color": "#e6e6e6",
+    "grid.linewidth": 0.6,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8,
+    "xtick.direction": "out",
+    "ytick.direction": "out",
+    "xtick.major.width": 0.7,
+    "ytick.major.width": 0.7,
+    "legend.frameon": False,
+    "legend.fontsize": 8,
+    "lines.linewidth": 1.6,
+})
+
+# Restrained palette
+_C_PRIMARY = "#2b6cb0"
+_C_ACCENT = "#c05621"
+_C_SELECT = "#2f855a"
+_C_MUTED = "#a0aec0"
 
 _GATE_COLOR = {
     "release_to_build": "#1b7f3b",
@@ -45,16 +83,22 @@ def _fig_orientation(orientation: Dict, path: Path) -> None:
     cands = orientation["candidates"]
     labels = [c.label.replace("face ⟂ ", "") for c in cands]
     support = [c.support_volume_mm3 / 1000.0 for c in cands]  # cm^3
-    colors = ["#1b7f3b" if i == 0 else "#9bb7d4" for i in range(len(cands))]
-    fig, ax = plt.subplots(figsize=(7, 3.6))
-    ax.bar(range(len(cands)), support, color=colors)
+    colors = [_C_SELECT if i == 0 else _C_MUTED for i in range(len(cands))]
+    fig, ax = plt.subplots(figsize=(6.6, 3.6))
+    ax.bar(range(len(cands)), support, color=colors, width=0.68)
     ax.set_xticks(range(len(cands)))
-    ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=7)
-    ax.set_ylabel("Support material (cm$^3$)")
-    ax.set_xlabel("Candidate face-down orientation (down-normal)")
-    ax.set_title("Orientation screening — support per candidate (green = selected)", fontsize=10)
+    ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=7.5)
+    ax.set_ylabel("support material (cm$^3$)")
+    ax.set_xlabel("candidate face-down orientation (down-normal)")
+    ax.set_title("Orientation screening — selected in green")
+    ax.margins(y=0.18)
+    # annotate the selected candidate (its bar may be ~0, so point to it)
+    ytop = max(support) if max(support) > 0 else 1.0
+    ax.annotate("selected", xy=(0, support[0]), xytext=(0, ytop * 0.4),
+                ha="center", fontsize=8, color=_C_SELECT, fontweight="bold",
+                arrowprops=dict(arrowstyle="-|>", color=_C_SELECT, lw=1.3))
     fig.tight_layout()
-    fig.savefig(path, dpi=110)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -62,75 +106,125 @@ def _fig_layer_profile(sim, path: Path) -> None:
     z = sim.layer_z_mm
     area = sim.layer_area_mm2
     support = sim.support_layer_area_mm2
-    fig, ax = plt.subplots(figsize=(7, 3.6))
-    ax.fill_betweenx(z, 0, area, color="#9bb7d4", label="part cross-section")
+    fig, ax = plt.subplots(figsize=(6.6, 3.6))
+    ax.fill_betweenx(z, 0, area, color=_C_PRIMARY, alpha=0.85, lw=0, label="part cross-section")
     if support is not None and float(np.sum(support)) > 0:
-        ax.fill_betweenx(z, 0, support, color="#d98c5f", alpha=0.8, label="support")
-    ax.set_xlabel("Cross-section area (mm$^2$)")
-    ax.set_ylabel("Build height z (mm)")
+        ax.fill_betweenx(z, 0, support, color=_C_ACCENT, alpha=0.8, lw=0, label="support")
+    ax.set_xlabel("cross-section area (mm$^2$)")
+    ax.set_ylabel("build height $z$ (mm)")
     ax.set_title("Per-layer cross-section (build simulation)")
-    ax.legend(loc="upper right", fontsize=8)
+    ax.legend(loc="upper right")
     fig.tight_layout()
-    fig.savefig(path, dpi=110)
+    fig.savefig(path)
     plt.close(fig)
 
 
 def _fig_cost_time(sim, path: Path) -> None:
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(7, 3.4))
-    a1.bar(["build"], [sim.material_cost_usd], label="material", color="#9bb7d4")
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(6.8, 3.4))
+    a1.bar(["build"], [sim.material_cost_usd], label="material", color=_C_PRIMARY, width=0.5)
     a1.bar(["build"], [sim.machine_cost_usd], bottom=[sim.material_cost_usd],
-           label="machine", color="#5f7fa8")
-    a1.set_ylabel("Cost (USD)")
+           label="machine", color="#1a3f66", width=0.5)
+    a1.set_ylabel("cost (USD)")
     a1.set_title(f"Cost — ${sim.total_cost_usd:.2f}")
-    a1.legend(fontsize=8)
-    a2.bar(["build"], [sim.deposition_time_h], label="deposition", color="#9bb7d4")
+    a1.legend()
+    a2.bar(["build"], [sim.deposition_time_h], label="deposition", color=_C_PRIMARY, width=0.5)
     a2.bar(["build"], [sim.overhead_time_h], bottom=[sim.deposition_time_h],
-           label="layer overhead", color="#5f7fa8")
-    a2.set_ylabel("Time (h)")
+           label="layer overhead", color="#1a3f66", width=0.5)
+    a2.set_ylabel("time (h)")
     a2.set_title(f"Time — {sim.total_time_h:.2f} h, {sim.n_layers} layers")
-    a2.legend(fontsize=8)
+    a2.legend()
     fig.tight_layout()
-    fig.savefig(path, dpi=110)
+    fig.savefig(path)
     plt.close(fig)
 
 
-def _active_node_coords(fea, fea_grid):
-    """Node coordinates (mm) and displacement magnitude for nodes touching the part."""
-    occ = fea_grid.occ
+# Local node offsets, and the 6 voxel faces as ordered corner-node offsets.
+_FACES = {
+    "x-": ((0, 0, 0), (0, 1, 0), (0, 1, 1), (0, 0, 1)),
+    "x+": ((1, 0, 0), (1, 1, 0), (1, 1, 1), (1, 0, 1)),
+    "y-": ((0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)),
+    "y+": ((0, 1, 0), (1, 1, 0), (1, 1, 1), (0, 1, 1)),
+    "z-": ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)),
+    "z+": ((0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)),
+}
+_NEIGHBOR = {"x-": (-1, 0, 0), "x+": (1, 0, 0), "y-": (0, -1, 0),
+             "y+": (0, 1, 0), "z-": (0, 0, -1), "z+": (0, 0, 1)}
+
+
+def _surface_quads(occ):
+    """Exposed voxel faces as lists of 4 node-index tuples (the FEA surface mesh)."""
     nx, ny, nz = occ.shape
-    nnx, nny, nnz = nx + 1, ny + 1, nz + 1
-    active = np.zeros((nnx, nny, nnz), dtype=bool)
-    for di in (0, 1):
-        for dj in (0, 1):
-            for dk in (0, 1):
-                active[di:di + nx, dj:dj + ny, dk:dk + nz] |= occ
-    ii, jj, kk = np.nonzero(active)
-    mag = fea.disp_grid[ii, jj, kk]
-    p = fea.pitch
-    return ii * p, jj * p, kk * p, mag
+    quads = []
+    ii, jj, kk = np.nonzero(occ)
+    for i, j, k in zip(ii, jj, kk):
+        for face, (di, dj, dk) in _NEIGHBOR.items():
+            ni, nj, nk = i + di, j + dj, k + dk
+            inside = (0 <= ni < nx) and (0 <= nj < ny) and (0 <= nk < nz)
+            if inside and occ[ni, nj, nk]:
+                continue  # interior face, skip
+            quads.append([(i + ox, j + oy, k + oz) for (ox, oy, oz) in _FACES[face]])
+    return quads
 
 
 def _fig_distortion(fea, fea_grid, path: Path) -> None:
-    xs, ys, zs, mag = _active_node_coords(fea, fea_grid)
-    if xs.size == 0:
+    """Deformed FEA surface mesh, exaggerated, contour-colored by |u|."""
+    occ = fea_grid.occ
+    if occ.sum() == 0 or fea.disp_vec is None:
         return
-    if xs.size > 9000:  # subsample dense grids for the scatter
-        idx = np.linspace(0, xs.size - 1, 9000).astype(int)
-        xs, ys, zs, mag = xs[idx], ys[idx], zs[idx], mag[idx]
-    fig = plt.figure(figsize=(6.0, 5.2))
+    quads = _surface_quads(occ)
+    if not quads:
+        return
+    p = fea.pitch
+    dv = fea.disp_vec
+    max_disp = max(fea.max_displacement_mm, 1e-9)
+    ext = np.array(occ.shape) * p
+    # exaggerate so the peak distortion is ~18% of the largest part dimension
+    scale = 0.18 * float(ext.max()) / max_disp
+
+    undeformed, deformed, facemag = [], [], []
+    for quad in quads:
+        ub, df = [], []
+        mags = []
+        for (i, j, k) in quad:
+            base = np.array([i, j, k], dtype=float) * p
+            d = dv[i, j, k]
+            ub.append(base)
+            df.append(base + d * scale)
+            mags.append(float(np.linalg.norm(d)))
+        undeformed.append(ub)
+        deformed.append(df)
+        facemag.append(np.mean(mags))
+    facemag = np.array(facemag)
+
+    norm = Normalize(vmin=0.0, vmax=max_disp)
+    cmap = plt.get_cmap("inferno")
+    fig = plt.figure(figsize=(6.2, 5.4))
     ax = fig.add_subplot(111, projection="3d")
-    sc = ax.scatter(xs, ys, zs, c=mag, cmap="inferno", s=8, depthshade=True)
-    cb = fig.colorbar(sc, ax=ax, shrink=0.6, pad=0.1)
-    cb.set_label("distortion |u| (mm)")
-    ax.set_xlabel("x (mm)"); ax.set_ylabel("y (mm)"); ax.set_zlabel("z (mm)")
-    ax.set_title(f"Inherent-strain FEA distortion field\nmax {fea.max_displacement_mm:.3f} mm "
-                 f"· {fea.n_elements} elems · {fea.iterations} CG iters")
+    # faint undeformed reference (build orientation)
+    ax.add_collection3d(Line3DCollection(
+        [q + [q[0]] for q in undeformed], colors="#c8cdd4", linewidths=0.3))
+    poly = Poly3DCollection(deformed, linewidths=0.25, edgecolors="#2d2d2d")
+    poly.set_facecolor(cmap(norm(facemag)))
+    ax.add_collection3d(poly)
+
+    allpts = np.array([pt for q in deformed for pt in q] + [pt for q in undeformed for pt in q])
+    ax.set_xlim(allpts[:, 0].min(), allpts[:, 0].max())
+    ax.set_ylim(allpts[:, 1].min(), allpts[:, 1].max())
+    ax.set_zlim(allpts[:, 2].min(), allpts[:, 2].max())
     try:
-        ax.set_box_aspect((xs.ptp() or 1, ys.ptp() or 1, zs.ptp() or 1))
+        ax.set_box_aspect((np.ptp(allpts[:, 0]) or 1, np.ptp(allpts[:, 1]) or 1, np.ptp(allpts[:, 2]) or 1))
     except Exception:
         pass
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    cb = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.08)
+    cb.set_label("distortion |u| (mm)")
+    ax.set_xlabel("x (mm)"); ax.set_ylabel("y (mm)"); ax.set_zlabel("z (mm)")
+    ax.set_title(f"Inherent-strain FEA — deformed mesh (×{scale:.0f} exaggerated)\n"
+                 f"peak {fea.max_displacement_mm:.3f} mm · {fea.n_elements} elements · "
+                 f"{fea.iterations} CG iters", fontsize=9)
+    ax.grid(False)
     fig.tight_layout()
-    fig.savefig(path, dpi=110)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -139,7 +233,7 @@ def _fig_part3d(mesh, path: Path) -> None:
         return
     fig = plt.figure(figsize=(5.2, 5.0))
     ax = fig.add_subplot(111, projection="3d")
-    coll = Poly3DCollection(mesh.triangles, alpha=0.85, facecolor="#9bb7d4", edgecolor="#33506e", linewidths=0.2)
+    coll = Poly3DCollection(mesh.triangles, alpha=0.9, facecolor="#9bb7d4", edgecolor="#33506e", linewidths=0.2)
     ax.add_collection3d(coll)
     lo, hi = mesh.bounds
     ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
@@ -149,8 +243,9 @@ def _fig_part3d(mesh, path: Path) -> None:
         pass
     ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_zlabel("z (build)")
     ax.set_title("Part in build orientation")
+    ax.grid(False)
     fig.tight_layout()
-    fig.savefig(path, dpi=110)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -292,10 +387,12 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
 </div>
 
 <h2>Distortion FEA (inherent-strain method)</h2>
-<p class="sub">Linear-elastic voxel FEM: {fea['elements']} elements, {fea['dof']} DOF, solved in
+<p class="sub">Target process: metal LPBF · <b>{_html.escape(str(fea.get('applicability', '')))}</b>.
+Linear-elastic voxel FEM: {fea['elements']} elements, {fea['dof']} DOF, solved in
 {fea['solver_iterations']} CG iterations (converged: {fea['converged']}). Eigenstrain {fea['eigenstrain']}.
 Peak distortion <b>{fea['max_distortion_mm']} mm</b>; peak von Mises
-{fea['peak_von_mises_mpa']} MPa (linear-elastic, indicative — no plasticity, so it can exceed yield).</p>
+{fea['peak_von_mises_mpa']} MPa (linear-elastic, indicative — no plasticity, so it can exceed yield).
+Deformed mesh below is exaggerated for visibility.</p>
 {_img_tag(figs.get('distortion'), embed)}
 
 <h2>Manufacturability (DfAM)</h2>

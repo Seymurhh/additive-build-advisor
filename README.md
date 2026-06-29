@@ -47,6 +47,8 @@ monitoring of the part once it is on the machine. The release gate's output
 (machine id, part id, expected layers/time, and the signals to watch) becomes
 that twin's as-built monitoring context.
 
+![System diagram](docs/system_diagram.png)
+
 ```mermaid
 flowchart LR
     CAD["CAD / STL geometry"] --> ABA
@@ -95,14 +97,34 @@ Each run writes a `digital_thread.json` record and a self-contained
 
 ## What a run produces
 
-| Orientation screening | Part in chosen orientation | Distortion FEA field |
+| Orientation screening | Part in chosen orientation | Distortion FEA (deformed mesh) |
 |---|---|---|
-| ![orientation](docs/orientation.png) | ![part in orientation](docs/part_orientation.png) | ![distortion FEA](docs/distortion.png) |
+| ![orientation](docs/orientation.png) | ![part in orientation](docs/part_orientation.png) | ![distortion FEA deformed mesh](docs/distortion.png) |
 
 The orientation step rests the bracket on its large flat back face (full base
-contact, **zero support**); the FEA distortion field is near zero at the clamped
-base and rises toward the free corners — the corner-lift that drives real
+contact, **zero support**); the FEA panel is the **deformed element mesh**
+(exaggerated for visibility, contour-colored by displacement) — near zero at the
+clamped base and rising toward the free corners, the corner-lift that drives real
 additive distortion.
+
+## Target process & method basis
+
+The distortion analysis targets **metal laser powder-bed fusion (LPBF)**, where
+residual-stress warpage governs. It uses the **inherent-strain method** — apply a
+calibrated thermal eigenstrain as a static load to a part-scale linear-elastic
+FEA — which is the accepted reduced-order approach in the field (Netfabb, ANSYS
+Additive; see the review in *Int. J. Adv. Manuf. Technol.* 2022) and is validated
+against the recognized **NIST AM-Bench 2018** cantilever/bridge artifact.
+
+This implementation is a faithful *simplified* version: a representative isotropic
+eigenstrain (not a calibrated anisotropic tensor), applied to the whole part at
+once, with the part **bonded to the plate**. So the reported distortion is the
+*on-plate* field — useful as a relative warpage screen. It is deliberately **not**
+the post-release deflection NIST measures after cutting the part free (~1–1.3 mm
+for the IN625 cantilever); reproducing that needs a release/cutting step and a
+calibrated inherent strain, which the report lists as the next step. For polymer
+processes the same solver runs but the result is only an indicative shrinkage
+tendency.
 
 ## Sample results
 
@@ -154,7 +176,7 @@ additive-build-advisor/
     shapes.py          # parametric sample-part generator
     pipeline.py        # end-to-end orchestration
     cli.py             # command-line entry point
-  examples/            # sample-part generator, tolerance specs, demo + FEA-validation runners
+  examples/            # sample parts, tolerance specs, demo runner, FEA validation, diagram generator
   data/                # generated sample STLs
   tests/               # smoke + validation tests (pytest or `python tests/test_smoke.py`)
 ```

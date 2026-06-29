@@ -38,6 +38,8 @@ and FEA solver are all written from scratch so the engineering is legible.
 
 ## System architecture
 
+![System diagram](docs/system_diagram.png)
+
 ```mermaid
 flowchart TD
     A["STL (binary/ASCII)"] --> B["geometry: normals, volume,\nwatertight check, geometry hash"]
@@ -137,6 +139,39 @@ reported separately). That peak stress is linear-elastic and *indicative* only:
 with no plasticity in the model it can exceed the material yield, where a real
 part would yield and stress-relieve. The distortion field is the meaningful
 output; the stress is a relative flag.
+
+The result is visualized as a **deformed element mesh** — the voxel surface
+displaced by the nodal solution (exaggerated for visibility) and contour-colored
+by displacement magnitude — rather than a node cloud, so the warpage is legible.
+
+### Target process, basis, and prior art
+
+The distortion analysis targets **metal laser powder-bed fusion (LPBF)**, where
+residual-stress warpage is the governing failure mode. The inherent-strain
+method — calibrate an eigenstrain (originally from Ueda's inherent-strain theory,
+adapted to AM) and apply it as a static load to a part-scale elastic FEA — is the
+accepted part-scale approach and what commercial tools (Autodesk Netfabb, ANSYS
+Additive, Simufact) implement; see the state-of-the-art review in *Int. J. Adv.
+Manuf. Technol.* (2022). The recognized validation artifact is the **NIST
+AM-Bench 2018 (AMB2018-01)** single cantilever / 12-leg bridge, built in IN625
+and 15-5 PH, measured by CMM before and after EDM release. The repo includes the
+cantilever geometry (`shapes.cantilever_benchmark`) and an IN625 profile to run
+on it. For polymer processes the same solver runs, but the record labels the
+result *indicative only*, since the eigenstrain calibration is a metal-PBF notion.
+
+### What the number means: on-plate vs post-release
+
+An important, honestly-stated limitation. This model holds the part **bonded to
+the build plate** (base clamped) and reports the resulting *on-plate* distortion
+field. The NIST cantilever's headline ~1.0–1.3 mm is the **post-release**
+deflection measured *after* the part is cut from the plate, when stored residual
+stress relaxes into a large curl — a different and larger quantity. Our predicted
+on-plate cantilever distortion (~0.1 mm) is therefore not directly comparable to
+that 1.3 mm, and the project says so rather than fudging the match. Capturing the
+post-release deflection requires a build-plate release/cutting step and a
+calibrated (anisotropic, layer-activated) inherent strain — listed under
+"Production extension plan." What *is* validated rigorously is the solver itself,
+below.
 
 ### FEA validation
 

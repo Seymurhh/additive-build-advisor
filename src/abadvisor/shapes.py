@@ -131,6 +131,16 @@ def tall_standoff(radius: float = 4.0, height: float = 70.0, segments: int = 32)
     return cylinder(radius=radius, height=height, segments=segments)
 
 
+def cantilever_benchmark(length: float = 75.0, width: float = 12.0, height: float = 6.0) -> Mesh:
+    """A long slender bar echoing the NIST AM-Bench 2018 single-cantilever artifact.
+
+    The canonical metal-LPBF distortion benchmark: a beam built on the plate that
+    warps from residual stress. Used here to exercise the distortion FEA on a
+    recognized geometry (see REPORT.md, "Prior art").
+    """
+    return extrude_polygon([(0, 0), (length, 0), (length, width), (0, width)], height)
+
+
 def hollow_housing(outer: float = 30.0, wall: float = 3.0, height: float = 24.0) -> Mesh:
     """A closed box with a fully enclosed internal cavity (trapped volume)."""
     o = outer

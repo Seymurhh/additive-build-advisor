@@ -38,10 +38,20 @@ _CUBE_SPEC = {
     ],
 }
 
+_CANTILEVER_SPEC = {
+    "part_name": "cantilever_benchmark",
+    "notes": "NIST AM-Bench-style single cantilever; distortion is the point of interest.",
+    "critical_dimensions": [
+        {"name": "length", "nominal_mm": 75.0, "tolerance_mm": 0.2, "type": "length"},
+        {"name": "thickness", "nominal_mm": 6.0, "tolerance_mm": 0.1, "type": "length"},
+    ],
+}
+
 SCENARIOS = [
     ("calibration_cube", "fff_pla", _CUBE_SPEC),
     ("gantry_bracket", "fff_pla", json.loads((EX / "tolerances_bracket.json").read_text())),
     ("hollow_housing", "sla_resin", json.loads((EX / "tolerances_housing.json").read_text())),
+    ("cantilever_benchmark", "lpbf_in625", _CANTILEVER_SPEC),
 ]
 
 

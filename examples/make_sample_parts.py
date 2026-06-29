@@ -28,6 +28,7 @@ PARTS = {
     "gantry_bracket": lambda: shapes.gantry_bracket(),
     "tall_standoff": lambda: shapes.tall_standoff(),
     "hollow_housing": lambda: shapes.hollow_housing(),
+    "cantilever_benchmark": lambda: shapes.cantilever_benchmark(),
 }
 
 

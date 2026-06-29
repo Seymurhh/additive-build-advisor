@@ -15,11 +15,25 @@ The resulting displacement field ``u`` is the predicted distortion. Its peak
 magnitude is the warpage estimate; clamping the base while the bulk shrinks
 reproduces the corner-lift that drives real additive distortion.
 
-This is the standard reduced-order approach used by tools like Netfabb and ANSYS
-Additive. It is *not* a calibrated transient thermo-mechanical solve: the
-eigenstrain is a representative per-process value, not fit to melt-pool history.
-But it is a genuine FEA — validated in ``tests`` against the analytical
-clamped-bar solution and for mesh convergence. See REPORT.md.
+Target process and prior art
+----------------------------
+This targets **metal laser powder-bed fusion (LPBF)**, where residual-stress
+warpage governs and the inherent-strain method is the accepted part-scale
+approach (it is what Netfabb and ANSYS Additive use). For polymer processes the
+same machinery runs but the result is only an indicative shrinkage tendency.
+
+The method (apply a calibrated eigenstrain as a static load to a part-scale
+elastic FEA) traces to Ueda's inherent-strain work and its AM adaptations; see
+the state-of-the-art review by Bayat et al. / Setien et al. (Int. J. Adv. Manuf.
+Technol., 2022) and the recognized validation artifact, the NIST AM-Bench 2018
+single cantilever / bridge (AMB2018-01).
+
+This is a *simplified* version: the eigenstrain is a representative isotropic
+per-process value, not a calibrated anisotropic tensor fit to melt-pool history,
+and the whole part is strained at once rather than layer-by-layer. It is still a
+genuine FEA — validated in ``tests`` against the analytical clamped-bar solution
+and for mesh convergence (and shown to be linear in eigenstrain / E-independent,
+as theory requires). See REPORT.md, "Distortion FEA".
 
 Note: for a pure eigenstrain load with no external force, the *displacement*
 field is independent of Young's modulus (it cancels between ``K`` and ``f``), so
@@ -30,7 +44,7 @@ modulus only enters the stress field.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -56,7 +70,6 @@ def elasticity_matrix(E: float, nu: float) -> np.ndarray:
 def _B_at(xi: float, eta: float, zeta: float, h: float) -> np.ndarray:
     """Strain-displacement matrix B (6x24) for a cube element of side h."""
     s = 2.0 * _NODE_OFFSETS - 1.0  # natural-coord signs per node, in {-1,+1}
-    nat = np.array([xi, eta, zeta])
     # shape-function derivatives wrt natural coords, then scale to physical (2/h)
     dN = np.zeros((8, 3))
     for a in range(8):
@@ -105,6 +118,8 @@ class FEAResult:
     eigenstrain: float
     # node-grid displacement magnitude, shape (nx+1, ny+1, nz+1); kept out of repr
     disp_grid: np.ndarray = field(repr=False, default=None)
+    # node-grid displacement vectors, shape (nx+1, ny+1, nz+1, 3); for deformed-mesh plots
+    disp_vec: np.ndarray = field(repr=False, default=None)
     node_shape: Tuple[int, int, int] = (0, 0, 0)
     pitch: float = 0.0
     peak_von_mises_mpa: Optional[float] = None
@@ -220,10 +235,11 @@ def solve_inherent_strain(
     active_node_mask[np.unique(edof) // 3] = True
     mag_active = mag[active_node_mask]
     disp_grid = mag.reshape(nnx, nny, nnz)
+    disp_vec = disp.reshape(nnx, nny, nnz, 3)
 
     peak_vm = None
     if compute_stress:
-        peak_vm = _peak_von_mises(u, edof, elem_idx, pitch, E, nu, eps_vec)
+        peak_vm = _peak_von_mises(u, edof, pitch, E, nu, eps_vec)
 
     return FEAResult(
         max_displacement_mm=float(mag_active.max()) if mag_active.size else 0.0,
@@ -234,13 +250,14 @@ def solve_inherent_strain(
         n_dof=int(free.sum()),
         eigenstrain=eigenstrain,
         disp_grid=disp_grid,
+        disp_vec=disp_vec,
         node_shape=(nnx, nny, nnz),
         pitch=pitch,
         peak_von_mises_mpa=peak_vm,
     )
 
 
-def _peak_von_mises(u, edof, elem_idx, h, E, nu, eps_vec) -> float:
+def _peak_von_mises(u, edof, h, E, nu, eps_vec) -> float:
     """Peak element-centroid von Mises stress (mechanical strain = total - eigen)."""
     D = elasticity_matrix(E, nu)
     B0 = _B_at(0.0, 0.0, 0.0, h)
