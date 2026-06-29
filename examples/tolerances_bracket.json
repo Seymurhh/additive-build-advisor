@@ -1,0 +1,16 @@
+{
+  "part_name": "gantry_bracket",
+  "notes": "Functional mounting bracket. The bore-fit height and mounting face carry the critical tolerances.",
+  "critical_dimensions": [
+    {"name": "overall_height", "nominal_mm": 40.0, "tolerance_mm": 0.05, "type": "length"},
+    {"name": "flange_length", "nominal_mm": 36.0, "tolerance_mm": 0.30, "type": "length"},
+    {"name": "wall_thickness", "nominal_mm": 4.0, "tolerance_mm": 0.20, "type": "length"}
+  ],
+  "gdt": [
+    {"feature": "mounting_face", "control": "flatness", "tolerance_mm": 0.08},
+    {"feature": "flange_to_base", "control": "perpendicularity", "tolerance_mm": 0.10, "datum": "A"}
+  ],
+  "surface_finish": [
+    {"feature": "mounting_face", "Ra_um": 3.2}
+  ]
+}

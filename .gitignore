@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Generated reports (kept out of the repo; regenerate with the example runner)
+output/*
+!output/.gitkeep
+
+# OS
+.DS_Store

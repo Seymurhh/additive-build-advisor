@@ -1,0 +1,11 @@
+{
+  "part_name": "hollow_housing",
+  "notes": "Sealed electronics housing with an internal cavity. Printed on SLA, so the cavity must drain.",
+  "critical_dimensions": [
+    {"name": "outer_width", "nominal_mm": 30.0, "tolerance_mm": 0.25, "type": "length"},
+    {"name": "cavity_depth", "nominal_mm": 18.0, "tolerance_mm": 0.20, "type": "length", "internal": true}
+  ],
+  "gdt": [
+    {"feature": "lid_seat", "control": "flatness", "tolerance_mm": 0.10}
+  ]
+}

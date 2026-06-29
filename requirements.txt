@@ -1,0 +1,5 @@
+# Light scientific stack. STL parsing, geometry, voxelization, DoE, and the
+# build simulation are written from scratch on top of numpy. matplotlib is
+# only used to render the report figures.
+numpy>=1.24
+matplotlib>=3.6
