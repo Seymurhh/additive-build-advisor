@@ -11,6 +11,10 @@ to end and to have a clean, extensible base I can keep developing.
 
 ![The part through the pipeline](docs/pipeline_filmstrip.png)
 
+And the build, simulated layer by layer:
+
+![Layer-by-layer build simulation](docs/build_animation.gif)
+
 For the full technical write-up — the FEA formulation, equations, validation, and
 honest limits — see [REPORT.md](REPORT.md).
 
