@@ -112,9 +112,9 @@ def _fig_layer_profile(sim, path: Path) -> None:
     area = sim.layer_area_mm2
     support = sim.support_layer_area_mm2
     fig, ax = plt.subplots(figsize=(6.6, 3.6))
-    ax.fill_betweenx(z, 0, area, color=_C_PRIMARY, alpha=0.85, lw=0, label="part cross-section")
+    ax.fill_betweenx(z, 0, area, step="mid", color=_C_PRIMARY, alpha=0.85, lw=0, label="part cross-section")
     if support is not None and float(np.sum(support)) > 0:
-        ax.fill_betweenx(z, 0, support, color=_C_ACCENT, alpha=0.8, lw=0, label="support")
+        ax.fill_betweenx(z, 0, support, step="mid", color=_C_ACCENT, alpha=0.8, lw=0, label="support")
     ax.set_xlabel("cross-section area (mm$^2$)")
     ax.set_ylabel("build height $z$ (mm)")
     ax.set_title("Per-layer cross-section (build simulation)")

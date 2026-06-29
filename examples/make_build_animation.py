@@ -87,7 +87,7 @@ def main() -> int:
 
         axm.cla()
         axm.plot(area_mm2, z_mm, color="#b8c2cc", lw=1.2)
-        axm.fill_betweenx(z_mm[: k + 1], 0, area_mm2[: k + 1], color="#2b6cb0", alpha=0.85, lw=0)
+        axm.fill_betweenx(z_mm[: k + 1], 0, area_mm2[: k + 1], step="mid", color="#2b6cb0", alpha=0.85, lw=0)
         axm.axhline(z_mm[k], color="#c05621", lw=1.0, ls="--")
         axm.set_xlim(0, area_mm2.max() * 1.08)
         axm.set_ylim(0, z_mm[-1] * 1.02)

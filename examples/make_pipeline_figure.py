@@ -63,9 +63,9 @@ def _draw_voxels(ax, occ, pitch, title):
 
 def _draw_layers(ax, sim, title):
     z = sim.layer_z_mm
-    ax.fill_betweenx(z, 0, sim.layer_area_mm2, color="#2b6cb0", alpha=0.85, lw=0)
+    ax.fill_betweenx(z, 0, sim.layer_area_mm2, step="mid", color="#2b6cb0", alpha=0.85, lw=0)
     if sim.support_layer_area_mm2 is not None and float(np.sum(sim.support_layer_area_mm2)) > 0:
-        ax.fill_betweenx(z, 0, sim.support_layer_area_mm2, color="#c05621", alpha=0.8, lw=0)
+        ax.fill_betweenx(z, 0, sim.support_layer_area_mm2, step="mid", color="#c05621", alpha=0.8, lw=0)
     ax.set_xlabel("area (mm$^2$)", fontsize=8)
     ax.set_ylabel("build height $z$ (mm)", fontsize=8)
     ax.tick_params(labelsize=7)
