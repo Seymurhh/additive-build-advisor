@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Additive Build Advisor — a design-to-inspection digital thread for AM</title>
+<meta name="description" content="A personal project: an STL-to-inspection digital thread for additive manufacturing with build-orientation screening, a build simulation, an inherent-strain distortion FEA, DfAM checks, an inspection plan, and a gated build record.">
+<style>
+  :root{
+    --ink:#1f2933; --muted:#5b6b7b; --line:#e4e9f0; --bg:#f6f8fb; --card:#ffffff;
+    --blue:#2b6cb0; --green:#2f855a; --amber:#b8860b; --red:#b22222;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--ink);background:var(--bg);
+       font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6}
+  .wrap{max-width:980px;margin:0 auto;padding:0 22px}
+  header{background:linear-gradient(180deg,#fff, #eef2f8);border-bottom:1px solid var(--line);
+         padding:46px 0 30px}
+  h1{font-family:Georgia,"Times New Roman",serif;font-size:34px;margin:0 0 6px;letter-spacing:-.2px}
+  .tag{color:var(--muted);font-size:18px;margin:0 0 8px}
+  .note{color:var(--muted);font-size:15px;margin:10px 0 18px}
+  .links a{display:inline-block;margin:4px 10px 4px 0;padding:8px 14px;border-radius:8px;
+           text-decoration:none;font-weight:600;font-size:14px;border:1px solid var(--line)}
+  .links a.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .links a.ghost{background:#fff;color:var(--ink)}
+  h2{font-family:Georgia,"Times New Roman",serif;font-size:23px;margin:34px 0 12px;
+     border-bottom:2px solid var(--line);padding-bottom:6px}
+  h3{font-size:17px;margin:22px 0 8px}
+  p{margin:10px 0}
+  figure{margin:16px 0;text-align:center}
+  img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+  figcaption{color:var(--muted);font-size:13px;margin-top:6px}
+  code{background:#eef2f6;padding:1px 6px;border-radius:5px;font-size:.92em}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+        border-radius:10px;overflow:hidden;font-size:14px;margin:14px 0}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid #eef2f6}
+  th{background:#eef2f6;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  .gate{font-weight:700;color:#fff;border-radius:999px;padding:2px 10px;font-size:12px;white-space:nowrap}
+  .g-rel{background:var(--green)} .g-rev{background:var(--amber)} .g-red{background:var(--red)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:14px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card h3{margin:0 0 4px;font-size:15px} .card p{margin:0;color:var(--muted);font-size:14px}
+  ul{margin:10px 0 10px 20px} li{margin:4px 0}
+  footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:38px;padding:20px 0 40px}
+  .pdf-frame{width:100%;height:680px;border:1px solid var(--line);border-radius:10px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>Additive Build Advisor</h1>
+  <p class="tag">A design-to-inspection <strong>digital thread</strong> for additive manufacturing.</p>
+  <p class="note">A personal project I built to learn the design-to-make additive workflow end to end —
+    and to have a clean, extensible base I can keep developing.</p>
+  <p class="links">
+    <a class="primary" href="https://github.com/Seymurhh/additive-build-advisor">View code on GitHub</a>
+    <a class="ghost" href="report.pdf">Technical report (PDF)</a>
+  </p>
+</div></header>
+
+<div class="wrap">
+
+  <p>It takes a part geometry (STL), decides how to build it, simulates the build, runs a
+  finite-element <strong>distortion analysis</strong>, checks whether the part can actually be made and
+  measured, and emits one auditable record with an explicit <strong>release gate</strong>:
+  <code>release_to_build</code>, <code>needs_engineering_review</code>, or <code>redesign_required</code>.</p>
+
+  <h2>The part through the pipeline</h2>
+  <figure>
+    <img src="pipeline_filmstrip.png" alt="The same part shown at each pipeline stage: STL mesh, orientation, voxelization, build simulation, distortion FEA">
+    <figcaption>The same bracket at each stage: STL mesh → chosen orientation → voxelization →
+      per-layer build simulation → inherent-strain distortion FEA.</figcaption>
+  </figure>
+
+  <h2>How it works</h2>
+  <figure>
+    <img src="system_diagram.png" alt="System diagram of the pipeline">
+  </figure>
+  <div class="grid">
+    <div class="card"><h3>Geometry kernel</h3><p>Parse the STL, recompute normals, verify watertightness; voxel volume cross-checked against the analytic mesh volume.</p></div>
+    <div class="card"><h3>Orientation</h3><p>Rest-on-face candidates scored on real support volume, base contact, and build height.</p></div>
+    <div class="card"><h3>Build simulation</h3><p>Voxelize by ray-stabbing; estimate layers, support, build time, and cost.</p></div>
+    <div class="card"><h3>Distortion FEA</h3><p>Inherent-strain linear-elastic solve with scikit-fem (metal LPBF).</p></div>
+    <div class="card"><h3>DfAM + inspection</h3><p>Thin walls, support, aspect ratio, trapped voids; tolerances vs as-built capability.</p></div>
+    <div class="card"><h3>Release gate</h3><p>Release, review, or redesign — with reasons — then a machine-readable record.</p></div>
+  </div>
+
+  <h2>Distortion FEA (inherent-strain method)</h2>
+  <p>Distortion is predicted with a genuine finite-element solve, assembled and solved with
+  <strong>scikit-fem</strong> on a hexahedral mesh. Each element carries a thermal eigenstrain, the base
+  is clamped to the plate, and the displacement field is the predicted distortion. This is the
+  inherent-strain method used by tools like Netfabb and ANSYS Additive, and it targets metal
+  laser powder-bed fusion (LPBF). The solver is validated against the analytical clamped-bar
+  solution, and the predicted distortion is linear in the eigenstrain and independent of Young's
+  modulus — as linear elasticity requires for an eigenstrain-only load.</p>
+  <figure>
+    <img src="distortion.png" alt="FEA distortion contour on the deformed mesh">
+    <figcaption>Deformed element mesh (exaggerated), coloured by displacement magnitude — near zero at
+      the clamped base, rising toward the free corners.</figcaption>
+  </figure>
+  <figure>
+    <img src="fea_validation.png" alt="FEA validation: clamped-bar convergence and process sensitivity">
+    <figcaption>Left: convergence to the analytical clamped-bar value as the mesh refines.
+      Right: distortion tracks the per-process inherent strain.</figcaption>
+  </figure>
+  <p><em>Honest scope:</em> the model reports the <strong>on-plate</strong> distortion (part bonded to
+  the plate), not the post-release deflection NIST measures after cutting a part free; reproducing that
+  needs a release step and a calibrated inherent strain.</p>
+
+  <h2>Orientation &amp; build simulation</h2>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+    <figure><img src="orientation.png" alt="Orientation screening chart"><figcaption>Orientation screening — support per candidate.</figcaption></figure>
+    <figure><img src="layer_profile.png" alt="Per-layer cross-section"><figcaption>Per-layer cross-section vs build height.</figcaption></figure>
+  </div>
+
+  <h2>Sample results</h2>
+  <p>The example runner exercises all three gate outcomes (numbers from a real run):</p>
+  <table>
+    <thead><tr><th>Part</th><th>Process</th><th>Build time</th><th>Cost</th><th>FEA distortion</th><th>Gate</th></tr></thead>
+    <tbody>
+      <tr><td>calibration_cube</td><td>FFF (PLA)</td><td>0.71 h</td><td>$3.79</td><td>0.158 mm</td><td><span class="gate g-rel">release_to_build</span></td></tr>
+      <tr><td>gantry_bracket</td><td>FFF (PLA)</td><td>0.80 h</td><td>$4.24</td><td>0.311 mm</td><td><span class="gate g-rev">needs_engineering_review</span></td></tr>
+      <tr><td>hollow_housing</td><td>SLA (resin)</td><td>1.94 h</td><td>$17.16</td><td>0.102 mm</td><td><span class="gate g-red">redesign_required</span></td></tr>
+      <tr><td>cantilever_benchmark</td><td>LPBF (IN625)</td><td>1.10 h</td><td>$103.61</td><td>0.093 mm</td><td><span class="gate g-rev">needs_engineering_review</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Technical report</h2>
+  <p>The full write-up — formulation, equations, validation, and limitations — is in the
+  <a href="report.pdf">PDF report</a>.</p>
+  <iframe class="pdf-frame" src="report.pdf" title="Technical report PDF"></iframe>
+
+  <footer>
+    Built with NumPy, SciPy, scikit-fem, and matplotlib. Reduced-order estimates plus an
+    inherent-strain FEA with representative process constants — not a melt-pool-calibrated
+    thermo-mechanical solve. Source and full report on
+    <a href="https://github.com/Seymurhh/additive-build-advisor">GitHub</a>.
+  </footer>
+</div>
+</body>
+</html>
