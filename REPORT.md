@@ -230,6 +230,27 @@ an eigenstrain-only load:
 
 ![FEA validation](docs/fea_validation.png)
 
+## Cross-process comparison
+
+The build simulation, cost/time, and DfAM checks run natively for every process
+profile. The distortion FEA is grounded in metal LPBF (the inherent-strain method
+is a metal-PBF technique) and is shown for FFF and SLA as an *indicative*
+comparison. Running the same bracket through three processes:
+
+![Cross-process comparison](docs/process_comparison.png)
+
+| Process | Build time | Cost | Layers | FEA distortion |
+|---|--:|--:|--:|--:|
+| metal LPBF (AlSi10Mg) | 3.43 h | \$276 | 1200 | 0.428 mm |
+| FFF (PLA) | 0.80 h | \$4.24 | 180 | 0.326 mm |
+| SLA (resin) | 2.12 h | \$18.15 | 720 | 0.166 mm |
+
+Metal is the slowest, most expensive, and highest-distortion route; FFF is fastest
+and cheapest; SLA sits between, with the finest layers among the polymers. The
+distortion ordering follows each process's representative inherent strain (and is
+$E$-independent), so the FFF/SLA values indicate relative shrinkage tendency
+rather than calibrated predictions.
+
 ## DfAM checks
 
 Transparent, severity-ranked manufacturability rules read from the same grid,

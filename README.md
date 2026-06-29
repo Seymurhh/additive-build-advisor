@@ -133,6 +133,26 @@ calibrated inherent strain, which the report lists as the next step. For polymer
 processes the same solver runs but the result is only an indicative shrinkage
 tendency.
 
+## Cross-process comparison
+
+The build simulation, cost/time, and DfAM run natively for every process; the
+distortion FEA is grounded in metal LPBF (the inherent-strain method) and shown
+for FFF/SLA as an indicative comparison. Running the **same bracket** through
+three processes:
+
+![Cross-process comparison](docs/process_comparison.png)
+
+| Process | Build time | Cost | Layers | FEA distortion |
+|---|--:|--:|--:|--:|
+| metal LPBF (AlSi10Mg) | 3.43 h | $276 | 1200 | 0.428 mm |
+| FFF (PLA) | 0.80 h | $4.24 | 180 | 0.326 mm |
+| SLA (resin) | 2.12 h | $18.15 | 720 | 0.166 mm |
+
+Metal is slowest, priciest, and highest-distortion; FFF is fastest and cheapest;
+SLA sits between. Distortion scales with each process's representative inherent
+strain and is independent of Young's modulus, so the FFF/SLA bars are indicative
+of shrinkage tendency rather than calibrated predictions.
+
 ## Sample results
 
 The example runner exercises all three gate outcomes (numbers from a real run):
