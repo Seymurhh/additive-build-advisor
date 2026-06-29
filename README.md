@@ -6,8 +6,13 @@ finite-element **distortion analysis**, checks whether the part can actually be
 made and measured, and emits one auditable record with an explicit **release
 gate** — `release_to_build`, `needs_engineering_review`, or `redesign_required`.
 
-For the full technical write-up — the FEA formulation, validation, and honest
-limits — see [REPORT.md](REPORT.md).
+A personal project: I built it to learn the design-to-make additive workflow end
+to end and to have a clean, extensible base I can keep developing.
+
+![The part through the pipeline](docs/pipeline_filmstrip.png)
+
+For the full technical write-up — the FEA formulation, equations, validation, and
+honest limits — see [REPORT.md](REPORT.md).
 
 ## What it does
 
@@ -178,7 +183,7 @@ additive-build-advisor/
     shapes.py          # parametric sample-part generator
     pipeline.py        # end-to-end orchestration
     cli.py             # command-line entry point
-  examples/            # sample parts, tolerance specs, demo runner, FEA validation, diagram generator
+  examples/            # sample parts, tolerance specs, demo runner, FEA validation, figure + PDF generators
   data/                # generated sample STLs
   tests/               # smoke + validation tests (pytest or `python tests/test_smoke.py`)
 ```
