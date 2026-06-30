@@ -5,3 +5,8 @@ numpy>=1.24
 scipy>=1.10
 scikit-fem>=8.0
 matplotlib>=3.6
+
+# Interactive web app (streamlit_app.py), deployed on Streamlit Community Cloud.
+# Not needed for the CLI/library; only for the browser front-end.
+streamlit>=1.36
+plotly>=5.22
