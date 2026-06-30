@@ -132,7 +132,7 @@ def build_record(
     gate = _apply_gate(is_watertight, sim.volume_error_pct, dfam, inspection)
 
     part_id = f"{inspection['part_name']}-{mesh.geometry_hash}"
-    machine_id = f"BTC-{profile.family}-01"
+    machine_id = f"SEAS-{profile.family}-01"
 
     record = {
         "schema": SCHEMA,
