@@ -31,7 +31,7 @@ from typing import Dict, List, Tuple
 class ProcessProfile:
     key: str
     name: str
-    family: str  # FFF | SLA | SLS | LPBF
+    family: str  # FFF | SLA | SLS
     material: str
 
     # Material
@@ -66,8 +66,7 @@ class ProcessProfile:
     # order eps* ~ alpha * dT_eff -- e.g. PLA (alpha ~ 68e-6 /K, dT_eff ~ 90 K)
     # gives ~ -0.006; ABS contracts (and warps) more, so it carries a larger value.
     # These are illustrative per-process values, not constants fit to a measured
-    # cooling history. The same eigenstrain machinery is the "inherent-strain
-    # method" when it is applied to metal powder-bed fusion.
+    # cooling history.
     youngs_modulus_mpa: float = 3000.0
     poisson_ratio: float = 0.35
     contraction_strain: float = -0.006
@@ -175,82 +174,6 @@ _PROFILES: Dict[str, ProcessProfile] = {
             youngs_modulus_mpa=2800.0,
             poisson_ratio=0.4,
             contraction_strain=-0.003,
-        ),
-        # Metal laser powder-bed fusion. FFF is this project's home turf (it is what
-        # my ES 51 students print); these metal profiles are kept so the same
-        # pipeline + thermal-contraction FEA can be run on metal, where the method is
-        # known as the inherent-strain method, as a point of comparison.
-        ProcessProfile(
-            key="lpbf_alsi10mg",
-            name="LPBF Metal (AlSi10Mg)",
-            family="LPBF",
-            material="AlSi10Mg",
-            density_g_cm3=2.67,
-            material_cost_per_kg=80.0,
-            support_material_cost_per_kg=80.0,
-            machine_rate_per_hour=80.0,
-            build_volume_mm=(250.0, 250.0, 325.0),
-            default_layer_height_mm=0.03,
-            self_support_angle_deg=45.0,
-            min_wall_mm=0.4,
-            min_hole_mm=0.5,
-            min_feature_mm=0.3,
-            support_infill_frac=0.20,
-            nominal_volume_rate_cm3_per_h=20.0,
-            recoat_time_s_per_layer=9.0,
-            needs_drain_holes=False,
-            post_processing=["stress relief", "wire-EDM off plate", "support machining"],
-            youngs_modulus_mpa=70000.0,
-            poisson_ratio=0.33,
-            contraction_strain=-0.008,
-        ),
-        ProcessProfile(
-            key="lpbf_in625",
-            name="LPBF Metal (Inconel 625)",
-            family="LPBF",
-            material="IN625",
-            density_g_cm3=8.44,
-            material_cost_per_kg=110.0,
-            support_material_cost_per_kg=110.0,
-            machine_rate_per_hour=90.0,
-            build_volume_mm=(250.0, 250.0, 325.0),
-            default_layer_height_mm=0.03,
-            self_support_angle_deg=45.0,
-            min_wall_mm=0.4,
-            min_hole_mm=0.5,
-            min_feature_mm=0.3,
-            support_infill_frac=0.22,
-            nominal_volume_rate_cm3_per_h=10.0,
-            recoat_time_s_per_layer=10.0,
-            needs_drain_holes=False,
-            post_processing=["stress relief", "wire-EDM off plate", "support machining"],
-            youngs_modulus_mpa=208000.0,
-            poisson_ratio=0.30,
-            contraction_strain=-0.008,
-        ),
-        ProcessProfile(
-            key="lpbf_ti64",
-            name="LPBF Metal (Ti-6Al-4V)",
-            family="LPBF",
-            material="Ti-6Al-4V",
-            density_g_cm3=4.43,
-            material_cost_per_kg=350.0,
-            support_material_cost_per_kg=350.0,
-            machine_rate_per_hour=90.0,
-            build_volume_mm=(250.0, 250.0, 325.0),
-            default_layer_height_mm=0.03,
-            self_support_angle_deg=45.0,
-            min_wall_mm=0.4,
-            min_hole_mm=0.5,
-            min_feature_mm=0.3,
-            support_infill_frac=0.25,
-            nominal_volume_rate_cm3_per_h=12.0,
-            recoat_time_s_per_layer=10.0,
-            needs_drain_holes=False,
-            post_processing=["stress relief", "HIP (optional)", "wire-EDM off plate", "support machining"],
-            youngs_modulus_mpa=110000.0,
-            poisson_ratio=0.34,
-            contraction_strain=-0.01,
         ),
     ]
 }

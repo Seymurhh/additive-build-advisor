@@ -27,7 +27,6 @@ _CAPABILITY = {
     "FFF": {"linear_mm": 0.40, "ra_um": 12.0},
     "SLA": {"linear_mm": 0.15, "ra_um": 4.0},
     "SLS": {"linear_mm": 0.30, "ra_um": 10.0},
-    "LPBF": {"linear_mm": 0.15, "ra_um": 12.0},
 }
 
 _FORM_CONTROLS = {"flatness", "parallelism", "perpendicularity", "position", "runout", "profile", "concentricity"}

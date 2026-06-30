@@ -125,9 +125,9 @@ solid. The per-layer cross-section comes straight from the voxel grid:
 
 ![Per-layer cross-section](docs/layer_profile.png)
 
-These scale correctly across processes: the same bracket is ~160 layers and a few
-dollars on FFF but ~1000 layers and a few hundred dollars on metal LPBF, driven by
-the 0.03 mm layer height and the machine rate.
+These scale correctly across processes: the same bracket is ~180 layers and a few
+dollars on FFF but ~720 layers and roughly $18 on SLA, driven by the finer
+layer height and the higher machine rate.
 
 ## Warpage FEA: the thermal-contraction method
 
@@ -184,7 +184,7 @@ $E$ only enters the stress. That peak stress is linear-elastic and *indicative*
 only: with no plasticity it can exceed yield, where a real part would yield and
 stress-relieve. The distortion field is the meaningful output.
 
-### Process focus, basis, and prior art
+### Process focus and basis
 
 The home process is **fused filament fabrication (FFF)**, where warping off the
 bed is the dominant geometric defect: as each extruded road cools from the
@@ -192,27 +192,21 @@ printing temperature it contracts, the already-solid material below resists it,
 residual stress builds, and the part curls up at its corners (worst on large flat
 footprints, and far worse for ABS than PLA). The reduced-order recipe — lump the
 cooling into one effective contraction strain $\varepsilon^{*}\approx-\alpha\,\Delta T$
-and apply it as a static eigenstrain load to a part-scale elastic FEA — is the
-same machinery that, applied to metal powder-bed fusion, is the **inherent-strain
-method** (from Ueda's inherent-strain theory, adapted to AM) that commercial tools
-implement (Netfabb, ANSYS Additive, Simufact; see the review in *Int. J. Adv.
-Manuf. Technol.*, 2022). So the solver runs unchanged on the metal profiles too:
-the repo includes a long flat cantilever bar and an IN625 profile, which together
-reproduce the geometry of the **NIST AM-Bench 2018 (AMB2018-01)** metal benchmark
-as a point of comparison.
+and apply it as a static eigenstrain load to a part-scale linear-elastic FEA — is
+a standard way to screen build warpage without a full transient thermo-mechanical
+solve. The repo's `cantilever_benchmark` (a long, flat ABS bar) is the worst-case
+warp geometry it is exercised on.
 
 ### What the number means: on-bed vs after-removal
 
 This model holds the part **bonded to the bed** and reports the *on-bed*
 distortion field — the warpage that has built up while the part is still stuck
-down. The headline figure quoted for the metal NIST cantilever (~1.0–1.3 mm) is a
-different quantity: the **post-release** deflection measured after the part is cut
-free from the plate, when stored residual stress relaxes into a large curl. The
-predicted on-bed cantilever distortion (~0.11 mm) is therefore not directly
-comparable to that 1.3 mm, and the tool says so rather than forcing the match.
-Capturing the after-removal deflection needs a release/cutting step and a
-calibrated (anisotropic, layer-activated) eigenstrain — see "Where I'd take
-it next."
+down. That is deliberately *not* the same as the **after-removal spring-back**:
+once the part is peeled off the bed, stored residual stress relaxes and the free
+part curls further. The on-bed field is a useful *relative* warpage screen (which
+geometries and materials warp more), not a prediction of the final free-part
+deflection. Capturing that needs a bed-release step and a contraction strain
+calibrated to a measured cooling history — see "Where I'd take it next."
 
 ### FEA validation
 
@@ -240,10 +234,8 @@ an eigenstrain-only load:
 ## Cross-process comparison
 
 The build simulation, cost/time, DfAM, and warpage FEA run natively for every
-process profile. FFF is the home process; the metal-LPBF row shows the same
-pipeline and thermal-contraction FEA on metal (where the method is the
-inherent-strain method) as a point of comparison. Running the same bracket
-through three processes:
+process profile. FFF is the home process; SLA and SLS are shown as a cross-process
+comparison. Running the same bracket through three additive processes:
 
 ![Cross-process comparison](docs/process_comparison.png)
 
@@ -251,13 +243,13 @@ through three processes:
 |---|--:|--:|--:|--:|
 | FFF (PLA) | 0.80 h | \$4.24 | 180 | 0.326 mm |
 | SLA (resin) | 2.12 h | \$18.15 | 720 | 0.166 mm |
-| metal LPBF (AlSi10Mg) | 3.43 h | \$276 | 1200 | 0.428 mm |
+| SLS (PA12) | 1.38 h | \$35.02 | 360 | 0.221 mm |
 
-FFF is fastest and cheapest; SLA sits between, with the finest layers among the
-polymers; metal is the slowest, most expensive, and highest-distortion route. The
-warpage ordering follows each process's representative contraction strain (and is
-$E$-independent) — so ABS warps more than PLA, as it does in practice, and metal
-more than either.
+FFF is the fastest and cheapest; SLA gives the finest layers; SLS is the priciest
+here (PA12 powder plus machine rate). The warpage ordering follows each process's
+representative contraction strain (and is $E$-independent) — so among these PLA
+warps the most and SLA the least, and ABS (not shown) would warp more still, as it
+does in practice.
 
 ## DfAM checks
 
@@ -338,8 +330,8 @@ production fidelity. The tool does **not** include:
 1. A real slicer with toolpath-length-based time and proper support generation.
 2. Layer-by-layer element activation and a contraction strain calibrated to
    measured cooling (or a transient thermo-mechanical solve), validated against
-   measured warpage, including a bed-release step so after-removal spring-back can
-   be predicted — and, on a metal profile, compared to the NIST AM-Bench artifact.
+   measured warpage on printed parts, including a bed-release step so the
+   after-removal spring-back can be predicted, not just the on-bed field.
 3. Qualified per-machine process profiles and measured-vs-predicted calibration.
 4. CAD/CAM integration (Fusion / STEP) to pull features, datums and PMI directly
    into the same record schema.

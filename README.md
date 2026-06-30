@@ -39,10 +39,9 @@ engineer runs before committing a build:
 4. **Analyze warpage (FEA)** — a linear-elastic finite-element solve for the
    **thermal-contraction warping** that curls FFF parts off the bed, assembled
    and solved with **scikit-fem** on a hexahedral mesh: each element carries a
-   thermal-contraction eigenstrain (the part shrinks as it cools), the first
-   layer is clamped to the bed, and the distortion field is solved. The same
-   eigenstrain solve, run on a metal profile, is the **inherent-strain method**
-   that Netfabb / ANSYS Additive use for metal distortion screening.
+   thermal-contraction eigenstrain (the part shrinks as it cools, `ε* ≈ −α·ΔT`),
+   the first layer is clamped to the bed (the bed-adhesion constraint), and the
+   distortion field is solved — the corner-lift that lifts FFF parts off the bed.
 5. **Check manufacturability (DfAM)** — thin walls, support burden, aspect ratio,
    distortion, and trapped powder/resin (enclosed voids found by flood fill).
 6. **Plan inspection** — turn the part's tolerances into a first-article
@@ -140,11 +139,10 @@ that cooling into one effective **thermal-contraction eigenstrain**
 (`ε* ≈ −α·ΔT`), applies it as a static load to a part-scale linear-elastic FEA,
 and clamps the first layer to the bed (the bed-adhesion constraint).
 
-That reduced-order recipe is exactly the **inherent-strain method** when it is
-applied to metal powder-bed fusion — the accepted part-scale approach the
-commercial tools use (Netfabb, ANSYS Additive; review in *Int. J. Adv. Manuf.
-Technol.* 2022) — so the same solver runs unchanged on the metal profiles as a
-point of comparison.
+That reduced-order recipe — lump the cooling into one effective contraction
+strain and apply it as a static eigenstrain load to a part-scale elastic FEA — is
+a standard way to screen build warpage without a full transient thermo-mechanical
+solve.
 
 It is a *simplified* model: one representative isotropic contraction strain (not
 a tensor fit to a measured cooling history), applied to the whole part at once,
@@ -155,9 +153,8 @@ off the bed. It is validated against the analytical clamped-bar solution.
 ## Cross-process comparison
 
 The build simulation, cost/time, DfAM, and warpage FEA run natively for every
-process. FFF is the home process; the metal-LPBF bar shows the same pipeline and
-thermal-contraction FEA on metal (where the method is the inherent-strain method)
-as a point of comparison. Running the **same bracket** through three processes:
+process. FFF is the home process; SLA and SLS are shown as a cross-process
+comparison. Running the **same bracket** through three additive processes:
 
 ![Cross-process comparison](docs/process_comparison.png)
 
@@ -165,12 +162,13 @@ as a point of comparison. Running the **same bracket** through three processes:
 |---|--:|--:|--:|--:|
 | FFF (PLA) | 0.80 h | $4.24 | 180 | 0.326 mm |
 | SLA (resin) | 2.12 h | $18.15 | 720 | 0.166 mm |
-| metal LPBF (AlSi10Mg) | 3.43 h | $276 | 1200 | 0.428 mm |
+| SLS (PA12) | 1.38 h | $35.02 | 360 | 0.221 mm |
 
-FFF is fastest and cheapest; SLA sits between; metal is slowest, priciest, and
-highest-distortion. Predicted warpage scales with each process's representative
-contraction strain (and is independent of Young's modulus), so ABS would warp
-more than PLA — as it does in practice.
+FFF is the fastest and cheapest; SLA gives the finest layers; SLS is the priciest
+here (PA12 powder plus machine rate). Predicted warpage scales with each process's
+representative contraction strain (and is independent of Young's modulus) — so
+among these PLA warps the most and SLA the least, and ABS (not shown) would warp
+more still, as it does in practice.
 
 ## Sample results
 
@@ -219,7 +217,7 @@ additive-build-advisor/
     inspection.py      # tolerance spec -> inspection plan + capability check
     digital_thread.py  # record assembly + release gate + JSON
     report.py          # matplotlib figures + self-contained HTML
-    materials.py       # process/material library (FFF first, plus SLA, SLS, LPBF) incl. elastic + contraction props
+    materials.py       # process/material library (FFF, SLA, SLS) incl. elastic + contraction props
     shapes.py          # parametric sample-part generator
     pipeline.py        # end-to-end orchestration
     cli.py             # command-line entry point

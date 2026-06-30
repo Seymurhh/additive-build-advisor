@@ -23,16 +23,13 @@ material below resists it, residual stress builds, and the part curls up off the
 bed at its corners (worse for large flat footprints, and far worse for ABS than
 PLA).
 
-Process focus and prior art
----------------------------
+Process focus
+-------------
 The home process here is **fused filament fabrication (FFF)** — it is what my
 ES 51 (Computer-Aided Machine Design) students print, and warping off the bed is
 the failure mode they actually hit. The reduced-order recipe (lump the cooling
 history into one effective contraction strain and apply it as a static eigenstrain
-load to a part-scale elastic FEA) is the same machinery that, applied to metal
-powder-bed fusion, is called the **inherent-strain method** (what Netfabb / ANSYS
-Additive implement; review in *Int. J. Adv. Manuf. Technol.*, 2022). So the
-solver runs unchanged on the metal profiles too, as a point of comparison.
+load to a part-scale elastic FEA) is a standard part-scale warpage screen.
 
 Scope honesty: this is a *simplified* model — a representative isotropic
 contraction strain (not a tensor fit to a measured cooling history), applied to
@@ -116,8 +113,7 @@ def solve_thermal_warp(
     ``eigenstrain`` is the (negative) isotropic cooling contraction applied to
     every element (``eps* ~ -alpha*dT``). Base nodes (z ~ 0) are clamped to the
     plate -- the bed-adhesion constraint in FFF. Assembled with scikit-fem,
-    solved with SciPy's sparse direct solver. Applied to a metal profile the same
-    solve is the inherent-strain method.
+    solved with SciPy's sparse direct solver.
     """
     if occ.sum() == 0:
         return _empty_result(eigenstrain, pitch)
@@ -190,8 +186,3 @@ def solve_thermal_warp(
         vm_nodal=vm_nodal,
         pitch=pitch,
     )
-
-
-# Back-compat alias: the same eigenstrain solve is the "inherent-strain method"
-# when it is run on a metal powder-bed-fusion profile.
-solve_inherent_strain = solve_thermal_warp

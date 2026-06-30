@@ -7,8 +7,8 @@ Two checks, both saved to ``docs/fea_validation.png``:
    We refine the mesh and show the FEA converging to it.
 2. **Process sensitivity.** The same bracket solved across every process family,
    showing predicted warpage scaling with the per-process thermal-contraction
-   strain (ABS > Ti-6Al-4V > AlSi10Mg/IN625 > PLA > SLS > SLA) -- ABS warps more
-   than PLA, as it does in practice.
+   strain (ABS > PLA > SLS > SLA) -- ABS warps more than PLA, as it does in
+   practice.
 
 Run:  python examples/validate_fea.py
 """
@@ -58,17 +58,16 @@ def main() -> int:
         dist.append(r["record"]["distortion_fea"]["max_distortion_mm"])
         print(f"  {prof.name:28s} eps*={prof.contraction_strain:+.3f}  ->  {dist[-1]:.3f} mm")
 
-    # ---- 3. warp-prone benchmark geometry (long flat cantilever bar) --
-    # A flat slender bar is the worst case for cooling warpage. Run here on a metal
-    # profile, this is the geometry of the NIST AM-Bench inherent-strain benchmark.
-    cant = advise(mesh=shapes.cantilever_benchmark(), process="lpbf_in625", grid_n=40, fea_grid_n=22)
+    # ---- 3. warp-prone geometry (long flat cantilever bar, ABS) ------
+    # A flat slender bar is the worst case for cooling warpage; ABS warps most.
+    cant = advise(mesh=shapes.cantilever_benchmark(), process="fff_abs", grid_n=40, fea_grid_n=22)
     cd = cant["record"]["distortion_fea"]
-    print("\nWarp-prone flat cantilever bar (here on metal IN625 -> inherent-strain method):")
-    print(f"  predicted ON-BASE peak distortion {cd['max_distortion_mm']:.3f} mm "
-          f"(part still bonded to the base).")
-    print("  NOTE: this is the on-base field. For the metal NIST AMB2018-01 artifact the")
-    print("  headline ~1.0-1.3 mm is the POST-RELEASE deflection after EDM-cutting the part")
-    print("  from the plate -- a different, larger quantity this static model does not simulate.")
+    print("\nWarp-prone flat cantilever bar (ABS, the FFF material that warps most):")
+    print(f"  predicted ON-BED peak warpage {cd['max_distortion_mm']:.3f} mm "
+          f"(part still bonded to the bed).")
+    print("  NOTE: this is the on-bed field, a relative screen -- not the spring-back")
+    print("  after the part is peeled off the bed, which needs a release step + a")
+    print("  contraction strain calibrated to a measured cooling history.")
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.2))
     a1.axhline(0.0, color="#888", lw=1, ls="--", label="analytical")
@@ -79,7 +78,7 @@ def main() -> int:
     a1.invert_xaxis()
     a1.grid(alpha=0.3)
 
-    colors = ["#b22222" if "Ti" in n or "AlSi" in n else "#9bb7d4" for n in names]
+    colors = ["#b22222" if "ABS" in n else "#9bb7d4" for n in names]
     a2.bar(range(len(names)), dist, color=colors)
     a2.set_xticks(range(len(names)))
     a2.set_xticklabels(names, rotation=30, ha="right", fontsize=8)

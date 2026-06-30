@@ -134,11 +134,9 @@ def tall_standoff(radius: float = 4.0, height: float = 70.0, segments: int = 32)
 def cantilever_benchmark(length: float = 75.0, width: float = 12.0, height: float = 6.0) -> Mesh:
     """A long, thin, large-footprint bar -- the classic warp-prone geometry.
 
-    A flat slender beam built on the plate is the worst case for cooling warpage:
-    the corners lift as the part contracts. Used to exercise the distortion FEA on
-    a geometry that warps a lot. Run on a metal profile it echoes the NIST AM-Bench
-    2018 single-cantilever inherent-strain benchmark, which is why it keeps that
-    name (see REPORT.md).
+    A flat slender beam printed on the bed is the worst case for cooling warpage:
+    the corners lift as the part contracts. Used to exercise the warpage FEA on a
+    geometry that warps a lot (it is the demo's ABS warp case).
     """
     return extrude_polygon([(0, 0), (length, 0), (length, width), (0, width)], height)
 

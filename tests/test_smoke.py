@@ -94,7 +94,7 @@ def test_fea_matches_analytical_bar():
 
 
 def test_fea_distortion_in_record():
-    r = advise(mesh=shapes.gantry_bracket(), process="lpbf_ti64", grid_n=32, fea_grid_n=12)
+    r = advise(mesh=shapes.gantry_bracket(), process="fff_abs", grid_n=32, fea_grid_n=12)
     d = r["record"]["distortion_fea"]
     assert d["max_distortion_mm"] > 0
     assert d["converged"] is True
@@ -121,7 +121,7 @@ def test_gate_outcomes():
 
 
 def test_record_is_json_serializable():
-    r = advise(mesh=shapes.gantry_bracket(), process="lpbf_alsi10mg", grid_n=32, fea_grid_n=12)
+    r = advise(mesh=shapes.gantry_bracket(), process="fff_pla", grid_n=32, fea_grid_n=12)
     json.dumps(r["record"])  # raises if any numpy types leaked through
 
 

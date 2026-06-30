@@ -181,10 +181,9 @@ def build_record(
         "distortion_fea": {
             "method": "thermal-contraction (eigenstrain) linear-elastic FEM (scikit-fem, hex elements)",
             "solver": fea.solver,
-            "target_process": "FFF (polymer warpage)",
+            "target_process": "FFF (polymer cooling warpage)",
             "applicability": ("home regime (FFF / polymer cooling warpage)" if profile.family == "FFF"
-                              else f"comparison run on {profile.family}; the same eigenstrain solve is "
-                                   "the inherent-strain method on metal PBF"),
+                              else f"indicative thermal-contraction screen for {profile.family}"),
             "eigenstrain": fea.eigenstrain,
             "max_distortion_mm": round(fea.max_displacement_mm, 4),
             "mean_distortion_mm": round(fea.mean_displacement_mm, 4),

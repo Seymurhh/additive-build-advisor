@@ -89,7 +89,7 @@
     <div class="card"><h3>Geometry kernel</h3><p>Parse the STL, recompute normals, verify watertightness; voxel volume cross-checked against the analytic mesh volume.</p></div>
     <div class="card"><h3>Orientation</h3><p>Rest-on-face candidates scored on real support volume, base contact, and build height.</p></div>
     <div class="card"><h3>Build simulation</h3><p>Voxelize by ray-stabbing; estimate layers, support, build time, and cost.</p></div>
-    <div class="card"><h3>Warpage FEA</h3><p>Thermal-contraction (eigenstrain) linear-elastic solve with scikit-fem (FFF; generalizes to metal).</p></div>
+    <div class="card"><h3>Warpage FEA</h3><p>Thermal-contraction (eigenstrain) linear-elastic solve with scikit-fem; the corner-lift that warps FFF parts off the bed.</p></div>
     <div class="card"><h3>DfAM + inspection</h3><p>Thin walls, support, aspect ratio, trapped voids; tolerances vs as-built capability.</p></div>
     <div class="card"><h3>Release gate</h3><p>Release, review, or redesign — with reasons — then a machine-readable record.</p></div>
   </div>
@@ -98,12 +98,11 @@
   <p>Warpage is predicted with a genuine finite-element solve, assembled and solved with
   <strong>scikit-fem</strong> on a hexahedral mesh. Each element carries a thermal-contraction
   eigenstrain (<code>&epsilon;* &approx; &minus;&alpha;&middot;&Delta;T</code>, the part shrinking as it
-  cools), the first layer is clamped to the bed, and the displacement field is the predicted warpage —
-  the corner-lift that curls FFF parts off the bed. The same eigenstrain solve, run on metal, is the
-  <strong>inherent-strain method</strong> tools like Netfabb and ANSYS Additive use. The solver is
-  validated against the analytical clamped-bar solution, and the predicted distortion is linear in the
-  contraction strain and independent of Young's modulus — as linear elasticity requires for an
-  eigenstrain-only load.</p>
+  cools), the first layer is clamped to the bed (the bed-adhesion constraint), and the displacement field
+  is the predicted warpage — the corner-lift that curls FFF parts off the bed. It is a standard way to
+  screen build warpage without a full transient thermo-mechanical solve. The solver is validated against
+  the analytical clamped-bar solution, and the predicted distortion is linear in the contraction strain
+  and independent of Young's modulus — as linear elasticity requires for an eigenstrain-only load.</p>
   <figure>
     <img src="distortion.png" alt="Warpage FEA contour on the deformed mesh">
     <figcaption>Deformed element mesh (exaggerated), coloured by displacement magnitude — near zero at
@@ -132,21 +131,21 @@
       <tr><td>calibration_cube</td><td>FFF (PLA)</td><td>0.71 h</td><td>$3.79</td><td>0.158 mm</td><td><span class="gate g-rel">release_to_build</span></td></tr>
       <tr><td>gantry_bracket</td><td>FFF (PLA)</td><td>0.80 h</td><td>$4.24</td><td>0.311 mm</td><td><span class="gate g-rev">needs_engineering_review</span></td></tr>
       <tr><td>hollow_housing</td><td>SLA (resin)</td><td>1.94 h</td><td>$17.16</td><td>0.102 mm</td><td><span class="gate g-red">redesign_required</span></td></tr>
-      <tr><td>cantilever_benchmark</td><td>metal LPBF (IN625)</td><td>1.10 h</td><td>$103.61</td><td>0.093 mm</td><td><span class="gate g-rev">needs_engineering_review</span></td></tr>
+      <tr><td>cantilever_benchmark</td><td>FFF (ABS)</td><td>0.46 h</td><td>$2.93</td><td>0.143 mm</td><td><span class="gate g-rev">needs_engineering_review</span></td></tr>
     </tbody>
   </table>
   <p>The bracket prints cleanly but carries a &plusmn;0.05&nbsp;mm tolerance and a 3.2&nbsp;&micro;m finish
   that are below FFF as-built capability, so it is routed to engineering review to finish those features on
-  the mill — the call the ES 51 lab makes. The last row runs the same pipeline on metal to show it generalizes.</p>
+  the mill — the call the ES 51 lab makes. The last row is a long, flat ABS bar, the worst-case warp geometry.</p>
 
   <h2>Cross-process comparison</h2>
   <p>The build simulation, cost/time, DfAM, and warpage FEA run natively for every process. FFF is the
-  home process; the metal-LPBF bar shows the same pipeline and thermal-contraction FEA on metal (there,
-  the inherent-strain method) as a point of comparison. The same bracket through three processes:</p>
+  home process; SLA and SLS are shown as a cross-process comparison. The same bracket through three
+  additive processes:</p>
   <figure>
-    <img src="process_comparison.png" alt="Same bracket compared across FFF, SLA, and metal LPBF">
-    <figcaption>FFF is fastest and cheapest; SLA sits between; metal LPBF is slowest, priciest, and
-      highest-distortion. Warpage scales with each process's contraction strain — so ABS warps more than PLA.</figcaption>
+    <img src="process_comparison.png" alt="Same bracket compared across FFF, SLA, and SLS">
+    <figcaption>FFF is fastest and cheapest; SLA gives the finest layers; SLS is priciest here.
+      Warpage scales with each process's contraction strain — so among these PLA warps most and SLA least.</figcaption>
   </figure>
 
   <h2>Technical report</h2>
