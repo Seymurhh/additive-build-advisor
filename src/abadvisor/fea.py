@@ -1,4 +1,4 @@
-"""Build-distortion finite-element analysis (inherent-strain method).
+"""Build-distortion finite-element analysis (thermal-contraction warping).
 
 This is the scientific core of the warpage prediction. It assembles and solves a
 3D linear-elastic finite-element problem with an established FEM library
@@ -8,31 +8,38 @@ solver:
 * the occupied voxels are turned into a hexahedral mesh (``MeshHex``), restricted
   to the part (trilinear ``ElementHex1`` vector elements — good for bending);
 * linear elasticity is assembled with ``skfem.models.elasticity``;
-* the build's accumulated thermal shrinkage is modeled as a uniform
-  **eigenstrain** (the inherent-strain method), entering as the consistent load
+* the part's accumulated cooling shrinkage is modeled as a uniform thermal
+  **eigenstrain** ``eps* ~ -alpha*dT``, entering as the consistent load
   ``f = integral( sigma0 : sym_grad(v) )`` with ``sigma0 = (3*lam+2*mu)*eps*``;
-* the base layer is clamped to the build plate;
+* the first layer is clamped to the plate (in FFF this is the bed-adhesion
+  constraint);
 * the sparse system ``K u = f`` is solved with SciPy's sparse direct solver.
 
 The resulting displacement field is the predicted distortion; we also recover the
-element von Mises stress. Clamping the base while the bulk shrinks reproduces the
-corner-lift that drives real additive distortion.
+element von Mises stress. Clamping the base while the bulk contracts reproduces
+the **corner-lift / warping** that is the dominant geometric defect in FFF: as
+each road cools from the extrusion temperature it shrinks, the already-solid
+material below resists it, residual stress builds, and the part curls up off the
+bed at its corners (worse for large flat footprints, and far worse for ABS than
+PLA).
 
-Target process and prior art
-----------------------------
-This targets **metal laser powder-bed fusion (LPBF)**, where residual-stress
-warpage governs and the inherent-strain method is the accepted part-scale
-approach (it is what Netfabb and ANSYS Additive use; see the review in *Int. J.
-Adv. Manuf. Technol.*, 2022). The recognized validation artifact is the NIST
-AM-Bench 2018 single cantilever / bridge (AMB2018-01).
+Process focus and prior art
+---------------------------
+The home process here is **fused filament fabrication (FFF)** — it is what my
+ES 51 (Computer-Aided Machine Design) students print, and warping off the bed is
+the failure mode they actually hit. The reduced-order recipe (lump the cooling
+history into one effective contraction strain and apply it as a static eigenstrain
+load to a part-scale elastic FEA) is the same machinery that, applied to metal
+powder-bed fusion, is called the **inherent-strain method** (what Netfabb / ANSYS
+Additive implement; review in *Int. J. Adv. Manuf. Technol.*, 2022). So the
+solver runs unchanged on the metal profiles too, as a point of comparison.
 
-Scope honesty: this is a *simplified* inherent-strain model — a representative
-isotropic eigenstrain (not a calibrated anisotropic tensor fit to melt-pool
-history), applied to the whole part at once, with the part bonded to the plate.
-So the reported distortion is the *on-plate* field (a relative warpage screen),
-not the post-release deflection NIST measures after cutting the part free. It is
-still validated against the analytical clamped-bar solution in ``tests``. For
-polymer processes the same solver runs but the result is indicative only.
+Scope honesty: this is a *simplified* model — a representative isotropic
+contraction strain (not a tensor fit to a measured cooling history), applied to
+the whole part at once, with the base bonded to the bed. So the reported
+distortion is the *on-bed* field (a relative warpage screen), not the
+post-removal spring-back after the part is released from the bed. It is validated
+against the analytical clamped-bar solution in ``tests``.
 """
 
 from __future__ import annotations
@@ -95,7 +102,7 @@ def _hex_mesh_from_voxels(occ: np.ndarray, pitch: float) -> MeshHex:
     return MeshHex(p2, t2)
 
 
-def solve_inherent_strain(
+def solve_thermal_warp(
     occ: np.ndarray,
     pitch: float,
     E: float,
@@ -104,11 +111,13 @@ def solve_inherent_strain(
     clamp_base: bool = True,
     **_ignored,
 ) -> FEAResult:
-    """Solve for build distortion under a uniform eigenstrain (inherent-strain).
+    """Solve for build distortion under a uniform thermal-contraction eigenstrain.
 
-    ``eigenstrain`` is the (negative) isotropic shrinkage applied to every
-    element. Base nodes (z ~ 0) are clamped to the plate. Assembled with
-    scikit-fem, solved with SciPy's sparse direct solver.
+    ``eigenstrain`` is the (negative) isotropic cooling contraction applied to
+    every element (``eps* ~ -alpha*dT``). Base nodes (z ~ 0) are clamped to the
+    plate -- the bed-adhesion constraint in FFF. Assembled with scikit-fem,
+    solved with SciPy's sparse direct solver. Applied to a metal profile the same
+    solve is the inherent-strain method.
     """
     if occ.sum() == 0:
         return _empty_result(eigenstrain, pitch)
@@ -181,3 +190,8 @@ def solve_inherent_strain(
         vm_nodal=vm_nodal,
         pitch=pitch,
     )
+
+
+# Back-compat alias: the same eigenstrain solve is the "inherent-strain method"
+# when it is run on a metal powder-bed-fusion profile.
+solve_inherent_strain = solve_thermal_warp

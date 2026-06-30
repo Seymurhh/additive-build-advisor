@@ -31,7 +31,7 @@ from abadvisor.orientation import optimize_orientation  # noqa: E402
 from abadvisor.voxelize import voxelize  # noqa: E402
 
 GRID_N = 22
-PROCESS = "lpbf_ti64"
+PROCESS = "fff_pla"
 
 
 def main() -> int:

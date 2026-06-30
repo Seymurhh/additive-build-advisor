@@ -146,7 +146,7 @@ def run_dfam(
         "trapped_volume", sev, msg, value=trapped_frac, limit=0.005, recommendation=rec,
     ))
 
-    # 6) Warpage / distortion (from the inherent-strain FEA) -------------
+    # 6) Warpage / distortion (from the thermal-contraction FEA) ---------
     char_len = max(sim.height_mm, *sim.footprint_dims_mm, 1e-6)
     distortion_ratio = fea.max_displacement_mm / char_len
     if distortion_ratio > 0.020:

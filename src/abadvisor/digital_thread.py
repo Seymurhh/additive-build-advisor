@@ -179,11 +179,12 @@ def build_record(
             },
         },
         "distortion_fea": {
-            "method": "inherent-strain linear-elastic FEM (scikit-fem, hex elements)",
+            "method": "thermal-contraction (eigenstrain) linear-elastic FEM (scikit-fem, hex elements)",
             "solver": fea.solver,
-            "target_process": "metal LPBF",
-            "applicability": ("calibrated regime (metal PBF)" if profile.family == "LPBF"
-                              else f"indicative only — inherent-strain targets metal PBF, not {profile.family}"),
+            "target_process": "FFF (polymer warpage)",
+            "applicability": ("home regime (FFF / polymer cooling warpage)" if profile.family == "FFF"
+                              else f"comparison run on {profile.family}; the same eigenstrain solve is "
+                                   "the inherent-strain method on metal PBF"),
             "eigenstrain": fea.eigenstrain,
             "max_distortion_mm": round(fea.max_displacement_mm, 4),
             "mean_distortion_mm": round(fea.mean_displacement_mm, 4),

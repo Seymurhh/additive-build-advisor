@@ -3,11 +3,12 @@
 Two checks, both saved to ``docs/fea_validation.png``:
 
 1. **Analytical + mesh convergence.** A clamped prismatic bar under a uniform
-   eigenstrain has an analytical top displacement of |eigenstrain| x height. We
-   refine the mesh and show the FEA converging to it.
+   contraction eigenstrain has an analytical top displacement of |eps*| x height.
+   We refine the mesh and show the FEA converging to it.
 2. **Process sensitivity.** The same bracket solved across every process family,
-   showing predicted distortion tracking the per-process inherent strain
-   (metal LPBF > ABS > PLA > SLS > SLA).
+   showing predicted warpage scaling with the per-process thermal-contraction
+   strain (ABS > Ti-6Al-4V > AlSi10Mg/IN625 > PLA > SLS > SLA) -- ABS warps more
+   than PLA, as it does in practice.
 
 Run:  python examples/validate_fea.py
 """
@@ -28,7 +29,7 @@ import numpy as np  # noqa: E402
 
 from abadvisor import report as _report  # noqa: E402,F401  (applies publication style)
 from abadvisor import shapes  # noqa: E402
-from abadvisor.fea import solve_inherent_strain  # noqa: E402
+from abadvisor.fea import solve_thermal_warp  # noqa: E402
 from abadvisor.materials import list_profiles  # noqa: E402
 from abadvisor.pipeline import advise  # noqa: E402
 
@@ -43,30 +44,31 @@ def main() -> int:
         pitch = H / nz
         cxy = max(1, int(round(8.0 / pitch)))
         occ = np.ones((cxy, cxy, nz), dtype=bool)
-        r = solve_inherent_strain(occ, pitch, E=70000.0, nu=0.33, eigenstrain=eps, tol=1e-9)
+        r = solve_thermal_warp(occ, pitch, E=70000.0, nu=0.33, eigenstrain=eps, tol=1e-9)
         pitches.append(pitch)
         errs.append(100.0 * (r.max_displacement_mm - analytic) / analytic)
         print(f"  pitch {pitch:4.1f} mm  ->  {r.max_displacement_mm:.4f} mm  ({errs[-1]:+.2f}%)")
 
     # ---- 2. process sensitivity on one part ---------------------------
     names, dist = [], []
-    print("\nBracket distortion by process:")
+    print("\nBracket warpage by process:")
     for prof in list_profiles():
         r = advise(mesh=shapes.gantry_bracket(), process=prof.key, grid_n=32, fea_grid_n=20)
         names.append(prof.material)
         dist.append(r["record"]["distortion_fea"]["max_distortion_mm"])
-        print(f"  {prof.name:28s} eps*={prof.inherent_strain:+.3f}  ->  {dist[-1]:.3f} mm")
+        print(f"  {prof.name:28s} eps*={prof.contraction_strain:+.3f}  ->  {dist[-1]:.3f} mm")
 
-    # ---- 3. recognized benchmark geometry (NIST AM-Bench cantilever) --
+    # ---- 3. warp-prone benchmark geometry (long flat cantilever bar) --
+    # A flat slender bar is the worst case for cooling warpage. Run here on a metal
+    # profile, this is the geometry of the NIST AM-Bench inherent-strain benchmark.
     cant = advise(mesh=shapes.cantilever_benchmark(), process="lpbf_in625", grid_n=40, fea_grid_n=22)
     cd = cant["record"]["distortion_fea"]
-    print("\nNIST AM-Bench-style single cantilever (IN625, LPBF):")
-    print(f"  predicted ON-PLATE peak distortion {cd['max_distortion_mm']:.3f} mm "
-          f"(part still bonded to the plate).")
-    print("  NOTE: the NIST AMB2018-01 measurement (~1.0-1.3 mm) is the POST-RELEASE")
-    print("  deflection after the part is EDM-cut from the plate -- a different,")
-    print("  larger quantity that this static on-plate model does not simulate.")
-    print("  Reproducing it needs a release/cutting step + calibrated inherent strain.")
+    print("\nWarp-prone flat cantilever bar (here on metal IN625 -> inherent-strain method):")
+    print(f"  predicted ON-BASE peak distortion {cd['max_distortion_mm']:.3f} mm "
+          f"(part still bonded to the base).")
+    print("  NOTE: this is the on-base field. For the metal NIST AMB2018-01 artifact the")
+    print("  headline ~1.0-1.3 mm is the POST-RELEASE deflection after EDM-cutting the part")
+    print("  from the plate -- a different, larger quantity this static model does not simulate.")
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.2))
     a1.axhline(0.0, color="#888", lw=1, ls="--", label="analytical")
@@ -82,7 +84,7 @@ def main() -> int:
     a2.set_xticks(range(len(names)))
     a2.set_xticklabels(names, rotation=30, ha="right", fontsize=8)
     a2.set_ylabel("FEA peak distortion (mm)")
-    a2.set_title("Process sensitivity — same bracket\n(distortion tracks inherent strain)")
+    a2.set_title("Process sensitivity — same bracket\n(warpage tracks thermal-contraction strain)")
     fig.tight_layout()
 
     out = ROOT / "docs" / "fea_validation.png"

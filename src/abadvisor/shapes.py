@@ -132,11 +132,13 @@ def tall_standoff(radius: float = 4.0, height: float = 70.0, segments: int = 32)
 
 
 def cantilever_benchmark(length: float = 75.0, width: float = 12.0, height: float = 6.0) -> Mesh:
-    """A long slender bar echoing the NIST AM-Bench 2018 single-cantilever artifact.
+    """A long, thin, large-footprint bar -- the classic warp-prone geometry.
 
-    The canonical metal-LPBF distortion benchmark: a beam built on the plate that
-    warps from residual stress. Used here to exercise the distortion FEA on a
-    recognized geometry (see REPORT.md, "Prior art").
+    A flat slender beam built on the plate is the worst case for cooling warpage:
+    the corners lift as the part contracts. Used to exercise the distortion FEA on
+    a geometry that warps a lot. Run on a metal profile it echoes the NIST AM-Bench
+    2018 single-cantilever inherent-strain benchmark, which is why it keeps that
+    name (see REPORT.md).
     """
     return extrude_polygon([(0, 0), (length, 0), (length, width), (0, width)], height)
 

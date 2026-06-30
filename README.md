@@ -1,13 +1,19 @@
 # Additive Build Advisor
 
-A design-to-inspection **digital thread** for additive manufacturing. It takes a
-part geometry (STL), decides how to build it, simulates the build, runs a
-finite-element **distortion analysis**, checks whether the part can actually be
-made and measured, and emits one auditable record with an explicit **release
-gate** — `release_to_build`, `needs_engineering_review`, or `redesign_required`.
+A design-to-inspection **digital thread** for additive manufacturing, with
+**fused filament fabrication (FFF)** as the home process. It takes a part
+geometry (STL), decides how to build it, simulates the build, runs a
+finite-element **warpage analysis**, checks whether the part can actually be made
+and measured, and emits one auditable record with an explicit **release gate** —
+`release_to_build`, `needs_engineering_review`, or `redesign_required`.
 
-A personal project: I built it to learn the design-to-make additive workflow end
-to end and to have a clean, extensible base I can keep developing.
+I teach **ES 51, Computer-Aided Machine Design**, at Harvard SEAS, where students
+design a part in CAD, FFF-print it, and then machine features on the lathe and
+mill. I built this as a teaching demo to make the *design → make → inspect*
+decisions legible: where do you rest the part on the bed, how long and how much
+does it cost, will it warp off the bed, which tolerances can FFF actually hold
+as-built (and which features have to be finished on the mill), and is it cleared
+to print. It is a clean base I keep extending.
 
 ![The part through the pipeline](docs/pipeline_filmstrip.png)
 
@@ -30,11 +36,13 @@ engineer runs before committing a build:
    *actual support volume*, base-contact area, and build height.
 3. **Simulate the build** — voxelize the part by ray-stabbing, then estimate
    layer count, support volume, build time, material, and cost.
-4. **Analyze distortion (FEA)** — a linear-elastic finite-element solve using the
-   **inherent-strain method**, assembled and solved with **scikit-fem** on a
-   hexahedral mesh: each element carries a thermal eigenstrain, the base is
-   clamped to the plate, and the distortion field is solved. This is what tools
-   like Netfabb / ANSYS Additive do for fast distortion screening.
+4. **Analyze warpage (FEA)** — a linear-elastic finite-element solve for the
+   **thermal-contraction warping** that curls FFF parts off the bed, assembled
+   and solved with **scikit-fem** on a hexahedral mesh: each element carries a
+   thermal-contraction eigenstrain (the part shrinks as it cools), the first
+   layer is clamped to the bed, and the distortion field is solved. The same
+   eigenstrain solve, run on a metal profile, is the **inherent-strain method**
+   that Netfabb / ANSYS Additive use for metal distortion screening.
 5. **Check manufacturability (DfAM)** — thin walls, support burden, aspect ratio,
    distortion, and trapped powder/resin (enclosed voids found by flood fill).
 6. **Plan inspection** — turn the part's tolerances into a first-article
@@ -54,9 +62,12 @@ renders the report.
 This is the **front half** of a digital thread — design intent flowing into a
 build decision. It is built to hand off to a companion project,
 `mini-manufacturing-digital-twin`, which is the **back half**: runtime
-monitoring of the part once it is on the machine. The release gate's output
-(machine id, part id, expected layers/time, and the signals to watch) becomes
-that twin's as-built monitoring context.
+monitoring of the part once it is on a machine. That matches how the ES 51 lab
+actually runs — students print the part, then take it to the lathe or mill to
+machine the features FFF cannot hold (the ones this tool flags for
+post-machining). The release gate's output (part id, expected build, the
+tolerances that need machining, and the signals to watch) becomes the twin's
+as-built monitoring context for that cut.
 
 ![System diagram](docs/system_diagram.png)
 
@@ -67,12 +78,12 @@ flowchart LR
       direction TB
       G["geometry + watertight check"] --> O["orientation screening"]
       O --> V["voxelize → build simulation"]
-      V --> F["distortion FEA\n(inherent strain)"]
+      V --> F["warpage FEA\n(thermal contraction)"]
       F --> D["DfAM checks"]
       D --> I["inspection plan"]
       I --> R["release gate + digital-thread record"]
     end
-    R -->|release_to_build| TWIN["mini-manufacturing-digital-twin\n(runtime monitoring)"]
+    R -->|release_to_build| TWIN["mini-manufacturing-digital-twin\n(monitors the lathe/mill cut)"]
     R -->|needs review / redesign| HUMAN["engineer"]
 ```
 
@@ -86,18 +97,18 @@ pip install -r requirements.txt
 # 1) generate the self-contained sample parts (writes data/*.stl)
 python examples/make_sample_parts.py
 
-# 2) run the three demo scenarios (writes output/<part>__<process>/report.html)
+# 2) run the demo scenarios (writes output/<part>__<process>/report.html)
 python examples/run_example.py
 
 # 3) (optional) reproduce the FEA validation figure
 python examples/validate_fea.py
 ```
 
-Or run a single part through the CLI:
+Or run a single part through the CLI (FFF is the default process):
 
 ```bash
 pip install -e .            # exposes the `build-advisor` command
-build-advisor data/gantry_bracket.stl --process lpbf_ti64 \
+build-advisor data/gantry_bracket.stl --process fff_pla \
     --tolerances examples/tolerances_bracket.json --out output/
 
 build-advisor --list-processes
@@ -108,68 +119,73 @@ Each run writes a `digital_thread.json` record and a self-contained
 
 ## What a run produces
 
-| Orientation screening | Part in chosen orientation | Distortion FEA (deformed mesh) |
+| Orientation screening | Part in chosen orientation | Warpage FEA (deformed mesh) |
 |---|---|---|
-| ![orientation](docs/orientation.png) | ![part in orientation](docs/part_orientation.png) | ![distortion FEA deformed mesh](docs/distortion.png) |
+| ![orientation](docs/orientation.png) | ![part in orientation](docs/part_orientation.png) | ![warpage FEA deformed mesh](docs/distortion.png) |
 
 The orientation step rests the bracket on its large flat back face (full base
 contact, **zero support**); the FEA panel is the **deformed element mesh**
 (exaggerated for visibility, contour-colored by displacement) — near zero at the
-clamped base and rising toward the free corners, the corner-lift that drives real
-additive distortion.
+bed-clamped base and rising toward the free corners, the corner-lift that warps
+FFF parts off the bed.
 
-## Target process & method basis
+## Process focus & method basis
 
-The distortion analysis targets **metal laser powder-bed fusion (LPBF)**, where
-residual-stress warpage governs. It uses the **inherent-strain method** — apply a
-calibrated thermal eigenstrain as a static load to a part-scale linear-elastic
-FEA — which is the accepted reduced-order approach in the field (Netfabb, ANSYS
-Additive; see the review in *Int. J. Adv. Manuf. Technol.* 2022) and is validated
-against the recognized **NIST AM-Bench 2018** cantilever/bridge artifact.
+The warpage analysis is built around **fused filament fabrication (FFF)**. As
+each extruded road cools from the printing temperature it contracts; the
+already-solid material below resists that shrinkage, residual stress builds, and
+the part curls up off the bed at its corners — the warping every FFF user fights,
+worst on large flat footprints and far worse for ABS than PLA. The solver lumps
+that cooling into one effective **thermal-contraction eigenstrain**
+(`ε* ≈ −α·ΔT`), applies it as a static load to a part-scale linear-elastic FEA,
+and clamps the first layer to the bed (the bed-adhesion constraint).
 
-This implementation is a faithful *simplified* version: a representative isotropic
-eigenstrain (not a calibrated anisotropic tensor), applied to the whole part at
-once, with the part **bonded to the plate**. So the reported distortion is the
-*on-plate* field — useful as a relative warpage screen. It is deliberately **not**
-the post-release deflection NIST measures after cutting the part free (~1–1.3 mm
-for the IN625 cantilever); reproducing that needs a release/cutting step and a
-calibrated inherent strain, which the report lists as the next step. For polymer
-processes the same solver runs but the result is only an indicative shrinkage
-tendency.
+That reduced-order recipe is exactly the **inherent-strain method** when it is
+applied to metal powder-bed fusion — the accepted part-scale approach the
+commercial tools use (Netfabb, ANSYS Additive; review in *Int. J. Adv. Manuf.
+Technol.* 2022) — so the same solver runs unchanged on the metal profiles as a
+point of comparison.
+
+It is a *simplified* model: one representative isotropic contraction strain (not
+a tensor fit to a measured cooling history), applied to the whole part at once,
+with the base bonded to the bed. So the reported distortion is the **on-bed**
+field — a relative warpage screen — not the spring-back after the part is peeled
+off the bed. It is validated against the analytical clamped-bar solution.
 
 ## Cross-process comparison
 
-The build simulation, cost/time, and DfAM run natively for every process; the
-distortion FEA is grounded in metal LPBF (the inherent-strain method) and shown
-for FFF/SLA as an indicative comparison. Running the **same bracket** through
-three processes:
+The build simulation, cost/time, DfAM, and warpage FEA run natively for every
+process. FFF is the home process; the metal-LPBF bar shows the same pipeline and
+thermal-contraction FEA on metal (where the method is the inherent-strain method)
+as a point of comparison. Running the **same bracket** through three processes:
 
 ![Cross-process comparison](docs/process_comparison.png)
 
-| Process | Build time | Cost | Layers | FEA distortion |
+| Process | Build time | Cost | Layers | Warpage FEA |
 |---|--:|--:|--:|--:|
-| metal LPBF (AlSi10Mg) | 3.43 h | $276 | 1200 | 0.428 mm |
 | FFF (PLA) | 0.80 h | $4.24 | 180 | 0.326 mm |
 | SLA (resin) | 2.12 h | $18.15 | 720 | 0.166 mm |
+| metal LPBF (AlSi10Mg) | 3.43 h | $276 | 1200 | 0.428 mm |
 
-Metal is slowest, priciest, and highest-distortion; FFF is fastest and cheapest;
-SLA sits between. Distortion scales with each process's representative inherent
-strain and is independent of Young's modulus, so the FFF/SLA bars are indicative
-of shrinkage tendency rather than calibrated predictions.
+FFF is fastest and cheapest; SLA sits between; metal is slowest, priciest, and
+highest-distortion. Predicted warpage scales with each process's representative
+contraction strain (and is independent of Young's modulus), so ABS would warp
+more than PLA — as it does in practice.
 
 ## Sample results
 
 The example runner exercises all three gate outcomes (numbers from a real run):
 
-| Part | Process | Build time | Cost | FEA distortion | DfAM | Gate |
+| Part | Process | Build time | Cost | Warpage FEA | DfAM | Gate |
 |---|---|--:|--:|--:|---|---|
 | calibration_cube | FFF (PLA) | 0.71 h | $3.79 | 0.158 mm | ok | **release_to_build** |
-| gantry_bracket | FFF (PLA) | 0.80 h | $4.24 | 0.302 mm | ok | **needs_engineering_review** |
-| hollow_housing | SLA (resin) | 1.94 h | $17.16 | 0.101 mm | critical | **redesign_required** |
+| gantry_bracket | FFF (PLA) | 0.80 h | $4.24 | 0.311 mm | ok | **needs_engineering_review** |
+| hollow_housing | SLA (resin) | 1.94 h | $17.16 | 0.102 mm | critical | **redesign_required** |
 
 - The **bracket** prints cleanly, but a ±0.05 mm tolerance and a 3.2 µm finish
-  are below FFF as-built capability, so it is routed to engineering review for
-  post-machining rather than released.
+  are below FFF as-built capability, so it is routed to engineering review to
+  finish those features on the mill rather than released as-printed — exactly the
+  call the ES 51 lab makes.
 - The **housing** has a fully enclosed cavity; on SLA that traps resin, so it is
   blocked for redesign (add drain holes).
 
@@ -180,11 +196,11 @@ Two engines are validated against ground truth, and the report surfaces both:
 - **Voxel volume** vs analytic geometry: an axis-aligned cube discretizes
   exactly, an off-axis rotated part converges to within ~0.1%, a known enclosed
   cavity is recovered to within ~2%.
-- **Distortion FEA** vs the analytical clamped-bar solution (top displacement
-  = |eigenstrain|·height): the FEA converges to it under mesh refinement, and
-  predicted distortion scales **linearly with eigenstrain** and is independent of
-  Young's modulus — exactly as linear-elastic theory requires for an
-  eigenstrain-only load.
+- **Warpage FEA** vs the analytical clamped-bar solution (top displacement
+  = |contraction strain|·height): the FEA converges to it under mesh refinement,
+  and predicted distortion scales **linearly with the contraction strain** and is
+  independent of Young's modulus — exactly as linear-elastic theory requires for
+  an eigenstrain-only load.
 
 ![FEA validation](docs/fea_validation.png)
 
@@ -198,12 +214,12 @@ additive-build-advisor/
     voxelize.py        # ray-stabbing voxelization + support/thin-wall/trapped analyses
     orientation.py     # rest-on-face orientation screening (support + contact + height)
     am_sim.py          # build simulation: layers, support, time, cost
-    fea.py             # inherent-strain linear-elastic FEM (scikit-fem hex + SciPy)
+    fea.py             # thermal-contraction (eigenstrain) linear-elastic FEM (scikit-fem hex + SciPy)
     dfam.py            # design-for-additive-manufacturing checks
     inspection.py      # tolerance spec -> inspection plan + capability check
     digital_thread.py  # record assembly + release gate + JSON
     report.py          # matplotlib figures + self-contained HTML
-    materials.py       # process/material library (FFF, SLA, SLS, LPBF) incl. elastic props
+    materials.py       # process/material library (FFF first, plus SLA, SLS, LPBF) incl. elastic + contraction props
     shapes.py          # parametric sample-part generator
     pipeline.py        # end-to-end orchestration
     cli.py             # command-line entry point
@@ -214,15 +230,15 @@ additive-build-advisor/
 
 ## Honest scope
 
-This is a compact prototype that demonstrates the workflow and the engineering
-judgment, not a production build processor. The voxel model is reduced-order;
-the distortion FEA is a genuine linear-elastic solve but uses the **inherent-
-strain method with representative per-process eigenstrains**, not a melt-pool-
-calibrated transient thermo-mechanical solve; and the material/machine numbers
-are representative defaults, not OEM-qualified profiles. REPORT.md lists exactly
-what a production version would add — a proper slicer, a calibrated transient
-thermo-mechanical solver, qualified process profiles, and a real CAD/CAM
-integration (e.g., Fusion or STEP) feeding the same record schema.
+This is a compact teaching prototype that demonstrates the workflow and the
+engineering judgment, not a production build processor. The voxel model is
+reduced-order; the warpage FEA is a genuine linear-elastic solve but uses a
+**representative per-process contraction strain**, not a solve fit to a measured
+cooling history; and the material/machine numbers are representative defaults,
+not vendor-qualified profiles. REPORT.md lists exactly what a production version
+would add — a proper slicer, a calibrated transient thermo-mechanical solver,
+qualified process profiles, and a real CAD/CAM integration (e.g., Fusion or STEP)
+feeding the same record schema.
 
 ## License
 

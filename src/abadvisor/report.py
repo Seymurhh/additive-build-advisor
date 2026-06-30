@@ -186,7 +186,7 @@ def _fig_distortion(fea, path: Path) -> None:
     cb.set_label(r"displacement $|u|$ (mm)")
     ax.set_xlabel("x (mm)"); ax.set_ylabel("y (mm)"); ax.set_zlabel("z (mm)")
     vm = f", von Mises peak {fea.peak_von_mises_mpa:.0f} MPa" if fea.peak_von_mises_mpa else ""
-    ax.set_title(f"Inherent-strain FEA — distortion on deformed mesh "
+    ax.set_title(f"Thermal-contraction FEA — warpage on deformed mesh "
                  f"(deformation $\\times${scale:.0f})\n"
                  f"peak {fea.max_displacement_mm:.3f} mm, {fea.n_elements} hex elements{vm}",
                  fontsize=9.5)
@@ -354,8 +354,8 @@ def render_html(result: Dict, outdir: str, embed: bool = True, filename: str = "
   <div>{_img_tag(figs.get('cost_time'), embed)}</div>
 </div>
 
-<h2>Distortion FEA (inherent-strain method)</h2>
-<p class="sub">Target process: metal LPBF · <b>{_html.escape(str(fea.get('applicability', '')))}</b>.
+<h2>Distortion FEA (thermal-contraction warping)</h2>
+<p class="sub">Process: FFF — polymer cooling warpage · <b>{_html.escape(str(fea.get('applicability', '')))}</b>.
 Solved with {_html.escape(str(fea.get('solver', '')))}: {fea['elements']} hex elements,
 {fea['dof']} DOF (converged: {fea['converged']}). Eigenstrain {fea['eigenstrain']}.
 Peak distortion <b>{fea['max_distortion_mm']} mm</b>; peak von Mises
@@ -380,8 +380,8 @@ requires CMM: {rec['inspection_plan']['requires_cmm']} · requires CT: {rec['ins
   <li>signals to watch: {_html.escape(', '.join(handoff['watch']))}</li>
 </ul>
 
-<p class="foot">Additive Build Advisor · reduced-order estimates plus an inherent-strain FEA;
-representative process constants, not a melt-pool-calibrated thermo-mechanical solve. See REPORT.md for scope and limits.</p>
+<p class="foot">Additive Build Advisor · reduced-order estimates plus a thermal-contraction FEA;
+representative process constants, not a solve fit to a measured cooling history. See REPORT.md for scope and limits.</p>
 </div></body></html>"""
 
     out_path = Path(outdir) / filename

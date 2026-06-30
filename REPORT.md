@@ -2,20 +2,22 @@
 
 ## Overview
 
-The Additive Build Advisor is a personal project I built to learn the
-**design-to-inspection digital thread** for additive manufacturing end to end,
-and to have a clean, extensible base I can keep developing. It ingests a part as
-an STL mesh, recovers a watertight geometry, chooses a build orientation by
-resting the part on candidate flat faces, simulates the build on a voxel model,
-solves a finite-element **distortion analysis** with the inherent-strain method,
-checks manufacturability (DfAM), turns the part's tolerances into an inspection
-plan, and assembles a single machine-readable record with an explicit release
-gate.
+The Additive Build Advisor is a teaching demo I built for **ES 51, Computer-Aided
+Machine Design**, the course I teach at Harvard SEAS, where students design a part
+in CAD, FFF-print it, and then machine features on the lathe and mill. It walks
+the **design-to-inspection digital thread** for additive manufacturing end to
+end, with **fused filament fabrication (FFF)** as the home process. It ingests a
+part as an STL mesh, recovers a watertight geometry, chooses a build orientation
+by resting the part on candidate flat faces, simulates the build on a voxel
+model, solves a finite-element **warpage analysis** (the thermal-contraction
+curl that lifts FFF parts off the bed), checks manufacturability (DfAM), turns
+the part's tolerances into an inspection plan, and assembles a single
+machine-readable record with an explicit release gate.
 
-The aim is not a production build processor. It is to implement the whole
-workflow myself, from first principles where that aids understanding and with an
-established library where that is the right tool, so each step is transparent and
-I can extend any piece later.
+The aim is not a production build processor. It is to make each decision in the
+design-to-make loop transparent for students — implemented from first principles
+where that aids understanding and with an established library where that is the
+right tool — and to be a clean base I can keep extending.
 
 ![The part through the pipeline](docs/pipeline_filmstrip.png)
 
@@ -127,13 +129,13 @@ These scale correctly across processes: the same bracket is ~160 layers and a fe
 dollars on FFF but ~1000 layers and a few hundred dollars on metal LPBF, driven by
 the 0.03 mm layer height and the machine rate.
 
-## Distortion FEA: the inherent-strain method
+## Warpage FEA: the thermal-contraction method
 
-Distortion is predicted with a genuine finite-element solve, assembled and solved
+Warpage is predicted with a genuine finite-element solve, assembled and solved
 with **scikit-fem** on a hexahedral mesh of 8-node trilinear elements (good for
 bending, unlike linear tetrahedra). The constitutive law carries an eigenstrain
-$\boldsymbol{\varepsilon}^{*}$ (the inherent strain that models the build's
-accumulated thermal shrinkage),
+$\boldsymbol{\varepsilon}^{*}$ (the thermal-contraction strain that lumps the
+part's cooling shrinkage, $\varepsilon^{*} \approx -\alpha\,\Delta T$),
 
 $$
 \boldsymbol{\sigma} = \mathbf{C} : \left(\boldsymbol{\varepsilon} - \boldsymbol{\varepsilon}^{*}\right),
@@ -158,11 +160,12 @@ $$
 \mathbf{f} = \int_{\Omega} \sigma_0\,\nabla\!\cdot\!\mathbf{v}\,dV ,
 $$
 
-giving the discrete system $\mathbf{K}\mathbf{u} = \mathbf{f}$, with the base layer
-clamped to the plate ($\mathbf{u} = \mathbf{0}$ at $z\!=\!0$) and the sparse solve
-performed by SciPy. The displacement field is the predicted distortion; clamping
-the base while the bulk shrinks reproduces the corner-lift that dominates real
-additive distortion. The element von Mises stress,
+giving the discrete system $\mathbf{K}\mathbf{u} = \mathbf{f}$, with the first
+layer clamped to the bed ($\mathbf{u} = \mathbf{0}$ at $z\!=\!0$ — the
+bed-adhesion constraint) and the sparse solve performed by SciPy. The
+displacement field is the predicted distortion; clamping the base while the bulk
+contracts reproduces the corner-lift that warps FFF parts off the bed. The
+element von Mises stress,
 
 $$
 \sigma_{vM} = \sqrt{\tfrac{1}{2}\!\left[(\sigma_x-\sigma_y)^2+(\sigma_y-\sigma_z)^2+(\sigma_z-\sigma_x)^2\right] + 3\left(\tau_{xy}^2+\tau_{yz}^2+\tau_{zx}^2\right)},
@@ -171,40 +174,44 @@ $$
 is recovered for context. The result is drawn as a deformed element mesh
 (exaggerated for visibility), contour-coloured by displacement magnitude:
 
-![Inherent-strain FEA distortion](docs/distortion.png)
+![Thermal-contraction warpage FEA](docs/distortion.png)
 
 A useful property: for an eigenstrain-only load (no external force) both
 $\mathbf{K}$ and $\mathbf{f}$ scale linearly with $E$, so the displacement
 $\mathbf{u} = \mathbf{K}^{-1}\mathbf{f}$ is **independent of Young's modulus** —
-distortion is governed by geometry, eigenstrain and Poisson's ratio. $E$ only
-enters the stress. That peak stress is linear-elastic and *indicative* only: with
-no plasticity it can exceed yield, where a real part would yield and
+distortion is governed by geometry, the contraction strain, and Poisson's ratio.
+$E$ only enters the stress. That peak stress is linear-elastic and *indicative*
+only: with no plasticity it can exceed yield, where a real part would yield and
 stress-relieve. The distortion field is the meaningful output.
 
-### Target process, basis, and prior art
+### Process focus, basis, and prior art
 
-This targets **metal laser powder-bed fusion (LPBF)**, where residual-stress
-warpage is the governing failure mode. The inherent-strain method — calibrate an
-eigenstrain (from Ueda's inherent-strain theory, adapted to AM) and apply it as a
-static load to a part-scale elastic FEA — is the accepted part-scale approach and
-what commercial tools (Netfabb, ANSYS Additive, Simufact) implement; see the
-state-of-the-art review in *Int. J. Adv. Manuf. Technol.* (2022). The recognised
-validation artifact is the **NIST AM-Bench 2018 (AMB2018-01)** single cantilever /
-12-leg bridge, measured by CMM before and after EDM release. The repo includes the
-cantilever geometry and an IN625 profile to run on it. For polymer processes the
-same solver runs, but the record marks the result *indicative only*, since the
-eigenstrain calibration is a metal-PBF notion.
+The home process is **fused filament fabrication (FFF)**, where warping off the
+bed is the dominant geometric defect: as each extruded road cools from the
+printing temperature it contracts, the already-solid material below resists it,
+residual stress builds, and the part curls up at its corners (worst on large flat
+footprints, and far worse for ABS than PLA). The reduced-order recipe — lump the
+cooling into one effective contraction strain $\varepsilon^{*}\approx-\alpha\,\Delta T$
+and apply it as a static eigenstrain load to a part-scale elastic FEA — is the
+same machinery that, applied to metal powder-bed fusion, is the **inherent-strain
+method** (from Ueda's inherent-strain theory, adapted to AM) that commercial tools
+implement (Netfabb, ANSYS Additive, Simufact; see the review in *Int. J. Adv.
+Manuf. Technol.*, 2022). So the solver runs unchanged on the metal profiles too:
+the repo includes a long flat cantilever bar and an IN625 profile, which together
+reproduce the geometry of the **NIST AM-Bench 2018 (AMB2018-01)** metal benchmark
+as a point of comparison.
 
-### What the number means: on-plate vs post-release
+### What the number means: on-bed vs after-removal
 
-This model holds the part **bonded to the plate** and reports the *on-plate*
-distortion field. The NIST cantilever's headline ~1.0–1.3 mm is the
-**post-release** deflection measured after the part is cut from the plate, when
-stored residual stress relaxes into a large curl — a different, larger quantity.
-The predicted on-plate cantilever distortion (~0.1 mm) is therefore not directly
+This model holds the part **bonded to the bed** and reports the *on-bed*
+distortion field — the warpage that has built up while the part is still stuck
+down. The headline figure quoted for the metal NIST cantilever (~1.0–1.3 mm) is a
+different quantity: the **post-release** deflection measured after the part is cut
+free from the plate, when stored residual stress relaxes into a large curl. The
+predicted on-bed cantilever distortion (~0.11 mm) is therefore not directly
 comparable to that 1.3 mm, and the tool says so rather than forcing the match.
-Capturing the post-release deflection needs a build-plate release/cutting step and
-a calibrated (anisotropic, layer-activated) inherent strain — see "Where I'd take
+Capturing the after-removal deflection needs a release/cutting step and a
+calibrated (anisotropic, layer-activated) eigenstrain — see "Where I'd take
 it next."
 
 ### FEA validation
@@ -232,24 +239,25 @@ an eigenstrain-only load:
 
 ## Cross-process comparison
 
-The build simulation, cost/time, and DfAM checks run natively for every process
-profile. The distortion FEA is grounded in metal LPBF (the inherent-strain method
-is a metal-PBF technique) and is shown for FFF and SLA as an *indicative*
-comparison. Running the same bracket through three processes:
+The build simulation, cost/time, DfAM, and warpage FEA run natively for every
+process profile. FFF is the home process; the metal-LPBF row shows the same
+pipeline and thermal-contraction FEA on metal (where the method is the
+inherent-strain method) as a point of comparison. Running the same bracket
+through three processes:
 
 ![Cross-process comparison](docs/process_comparison.png)
 
-| Process | Build time | Cost | Layers | FEA distortion |
+| Process | Build time | Cost | Layers | Warpage FEA |
 |---|--:|--:|--:|--:|
-| metal LPBF (AlSi10Mg) | 3.43 h | \$276 | 1200 | 0.428 mm |
 | FFF (PLA) | 0.80 h | \$4.24 | 180 | 0.326 mm |
 | SLA (resin) | 2.12 h | \$18.15 | 720 | 0.166 mm |
+| metal LPBF (AlSi10Mg) | 3.43 h | \$276 | 1200 | 0.428 mm |
 
-Metal is the slowest, most expensive, and highest-distortion route; FFF is fastest
-and cheapest; SLA sits between, with the finest layers among the polymers. The
-distortion ordering follows each process's representative inherent strain (and is
-$E$-independent), so the FFF/SLA values indicate relative shrinkage tendency
-rather than calibrated predictions.
+FFF is fastest and cheapest; SLA sits between, with the finest layers among the
+polymers; metal is the slowest, most expensive, and highest-distortion route. The
+warpage ordering follows each process's representative contraction strain (and is
+$E$-independent) — so ABS warps more than PLA, as it does in practice, and metal
+more than either.
 
 ## DfAM checks
 
@@ -317,8 +325,8 @@ production fidelity. The tool does **not** include:
 
 - A true slicer / toolpath generator (build time is volume- and layer-based).
 - A calibrated transient thermo-mechanical solve. The FEA is a real linear-elastic
-  solve, but the inherent strain is a representative per-process value, not fit to
-  melt-pool thermal history.
+  solve, but the contraction strain is a representative per-process value, not fit
+  to a measured cooling history.
 - OEM-qualified material/machine profiles (numbers are representative defaults).
 - A real CAD/CAM integration (geometry is STL; tolerances are JSON).
 - Lattice/infill modeling, multi-part nesting, or layer-by-layer activation in the
@@ -328,9 +336,10 @@ production fidelity. The tool does **not** include:
 ## Where I'd take it next
 
 1. A real slicer with toolpath-length-based time and proper support generation.
-2. Layer-by-layer element activation and a calibrated inherent-strain (or transient
-   thermo-mechanical) solve, validated against measured distortion, including a
-   build-plate release step so post-release deflection can be compared to NIST.
+2. Layer-by-layer element activation and a contraction strain calibrated to
+   measured cooling (or a transient thermo-mechanical solve), validated against
+   measured warpage, including a bed-release step so after-removal spring-back can
+   be predicted — and, on a metal profile, compared to the NIST AM-Bench artifact.
 3. Qualified per-machine process profiles and measured-vs-predicted calibration.
 4. CAD/CAM integration (Fusion / STEP) to pull features, datums and PMI directly
    into the same record schema.

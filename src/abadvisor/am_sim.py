@@ -7,9 +7,9 @@ support material volume, build time (deposition + per-layer overhead), and cost
 
 Distortion / warpage is deliberately *not* estimated here with a heuristic --
 it is solved separately as a finite-element problem in :mod:`abadvisor.fea`
-(the inherent-strain method) and attached downstream. This module only keeps the
-geometric descriptors (aspect ratio, peak cross-section) that the DfAM checks
-use directly.
+(the thermal-contraction / eigenstrain method) and attached downstream. This
+module only keeps the geometric descriptors (aspect ratio, peak cross-section)
+that the DfAM checks use directly.
 """
 
 from __future__ import annotations

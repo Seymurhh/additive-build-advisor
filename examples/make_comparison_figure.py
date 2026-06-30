@@ -1,9 +1,10 @@
 """Render the cross-process comparison figure (docs/process_comparison.png).
 
-Runs the *same part* (the gantry bracket) through three processes — metal LPBF
-(AlSi10Mg), FFF (PLA), and SLA (resin) — and compares build time, cost, support
-material, and predicted distortion. The distortion FEA is grounded in metal LPBF;
-the FFF/SLA distortion bars are the indicative cross-process comparison.
+Runs the *same part* (the gantry bracket) through three processes — FFF (PLA),
+SLA (resin), and metal LPBF (AlSi10Mg) — and compares build time, cost, support
+material, and predicted distortion. FFF is the home process; the metal LPBF bar
+shows the same pipeline + thermal-contraction FEA (there, the inherent-strain
+method) on metal, as a point of comparison.
 
 Run:  python examples/make_comparison_figure.py
 """
@@ -26,9 +27,9 @@ from abadvisor import shapes  # noqa: E402
 from abadvisor.pipeline import advise  # noqa: E402
 
 PROCESSES = [
-    ("metal LPBF\n(AlSi10Mg)", "lpbf_alsi10mg", "#b22222"),
     ("FFF\n(PLA)", "fff_pla", "#2b6cb0"),
     ("SLA\n(resin)", "sla_resin", "#2f855a"),
+    ("metal LPBF\n(AlSi10Mg)", "lpbf_alsi10mg", "#b22222"),
 ]
 
 

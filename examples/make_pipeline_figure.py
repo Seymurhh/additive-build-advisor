@@ -96,7 +96,7 @@ def _draw_fea(ax, fea, title):
 
 def main() -> int:
     mesh = shapes.gantry_bracket()
-    result = advise(mesh=mesh, process="lpbf_ti64", grid_n=64, fea_grid_n=24)
+    result = advise(mesh=mesh, process="fff_pla", grid_n=64, fea_grid_n=24)
     oriented = result["oriented_mesh"]
     sim = result["sim"]
     fea = result["fea"]
@@ -113,7 +113,7 @@ def main() -> int:
     _draw_mesh(ax2, oriented, "2. Orientation")
     _draw_voxels(ax3, occ_thumb, voxelize(oriented, grid_n=16).pitch, "3. Voxelization")
     _draw_layers(ax4, sim, "4. Build simulation")
-    _draw_fea(ax5, fea, "5. Distortion FEA")
+    _draw_fea(ax5, fea, "5. Warpage FEA")
 
     # arrows between panels (figure coordinates)
     for x in (0.205, 0.405, 0.605, 0.805):

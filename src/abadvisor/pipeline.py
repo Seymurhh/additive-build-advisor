@@ -19,7 +19,7 @@ from typing import Dict, Optional
 from . import digital_thread
 from .am_sim import simulate_build
 from .dfam import run_dfam
-from .fea import solve_inherent_strain
+from .fea import solve_thermal_warp
 from .geometry import Mesh, watertight_report
 from .inspection import generate_inspection_plan
 from .materials import get_profile
@@ -62,12 +62,12 @@ def advise(
     grid = voxelize(oriented, grid_n=grid_n)
     sim = simulate_build(oriented, grid, profile)
 
-    # Distortion FEA (inherent-strain method) on a separate coarse grid.
+    # Distortion FEA (thermal-contraction warping) on a separate coarse grid.
     fea_grid = voxelize(oriented, grid_n=fea_grid_n)
-    fea = solve_inherent_strain(
+    fea = solve_thermal_warp(
         fea_grid.occ, fea_grid.pitch,
         E=profile.youngs_modulus_mpa, nu=profile.poisson_ratio,
-        eigenstrain=profile.inherent_strain, compute_stress=True,
+        eigenstrain=profile.contraction_strain, compute_stress=True,
     )
 
     dfam = run_dfam(oriented, grid, sim, profile, fea, orientation_fits=best.fits_build_volume)

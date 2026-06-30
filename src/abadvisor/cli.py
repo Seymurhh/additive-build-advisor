@@ -1,6 +1,6 @@
 """Command-line interface for the Additive Build Advisor.
 
-    build-advisor PART.stl --process lpbf_alsi10mg --tolerances spec.json --out output/
+    build-advisor PART.stl --process fff_pla --tolerances spec.json --out output/
 
 Runs the full pipeline, writes ``report.html`` and ``digital_thread.json`` to the
 output directory, and prints a short verdict to the console.

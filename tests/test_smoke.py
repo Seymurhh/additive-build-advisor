@@ -84,10 +84,10 @@ def test_orientation_rests_on_a_face():
 def test_fea_matches_analytical_bar():
     # Clamped prismatic bar, uniform eigenstrain: top displacement ~ |eps|*H.
     import numpy as np
-    from abadvisor.fea import solve_inherent_strain
+    from abadvisor.fea import solve_thermal_warp
     H, eps = 30, -0.01
     occ = np.ones((4, 4, H), dtype=bool)
-    r = solve_inherent_strain(occ, pitch=1.0, E=70000.0, nu=0.33, eigenstrain=eps, tol=1e-8)
+    r = solve_thermal_warp(occ, pitch=1.0, E=70000.0, nu=0.33, eigenstrain=eps, tol=1e-8)
     analytic = abs(eps) * H
     assert r.converged
     assert abs(r.max_displacement_mm - analytic) / analytic < 0.10

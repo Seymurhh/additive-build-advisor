@@ -83,7 +83,7 @@ def main() -> int:
     for x in xs:
         arrow(ax, cx, 9.15, x, 8.05)
     box(ax, xs[0], 7.35, 2.7, 1.35, "Build sim", "layers · support\ntime · cost", blue, blue_e, 10, 8.5)
-    box(ax, xs[1], 7.35, 2.7, 1.35, "Distortion FEA", "inherent strain\n(scikit-fem, LPBF)", amber, amber_e, 10, 8.5)
+    box(ax, xs[1], 7.35, 2.7, 1.35, "Warpage FEA", "thermal contraction\n(scikit-fem, FFF)", amber, amber_e, 10, 8.5)
     box(ax, xs[2], 7.35, 2.7, 1.35, "DfAM checks", "walls · support\naspect · voids", blue, blue_e, 10, 8.5)
     box(ax, xs[3], 7.35, 2.7, 1.35, "Inspection plan", "tolerances to\nmethod + capability", blue, blue_e, 10, 8.5)
 
