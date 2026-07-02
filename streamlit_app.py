@@ -130,6 +130,9 @@ _MAX_FACETS = 60000
 _WARN_FACETS = 8000
 _GRID_OPTIONS = [32, 48, 64, 80, 96]
 
+# End-to-end flow figure shown on the landing page (docs/make_thread_flow.py).
+_THREAD_IMG = os.path.join(os.path.dirname(__file__), "docs", "thread_flow.png")
+
 
 # --------------------------------------------------------------------------- #
 # Design system (custom CSS)
@@ -1000,6 +1003,13 @@ if not run:
         'In the sidebar, choose a sample part (or upload an STL), pick a process, and press '
         '<b>Run the advisor</b>. You will land on an overview, then step through the seven stages of the '
         'build decision.</div></div>')
+    if os.path.exists(_THREAD_IMG):
+        st.markdown("")
+        _md('<div class="aba-eyebrow aba-anim" style="color:var(--muted); text-align:center; '
+            'margin-bottom:6px">The whole thread at a glance</div>')
+        st.image(_THREAD_IMG, use_container_width=True)
+        st.caption("Design → build → inspect → decide, run on the sample bracket. "
+                   "The app reproduces every one of these stages interactively for your part.")
     st.stop()
 
 _workspace()

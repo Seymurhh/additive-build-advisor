@@ -15,7 +15,11 @@ does it cost, will it warp off the bed, which tolerances can FFF actually hold
 as-built (and which features have to be finished on the mill), and is it cleared
 to print. It is a clean base I keep extending.
 
-![The part through the pipeline](docs/pipeline_filmstrip.png)
+![The design-to-inspection digital thread](docs/thread_flow.png)
+
+The whole thread in one view — *design → build → inspect → decide* — run on the
+sample bracket, with the real numbers from that run. The web app reproduces every
+stage interactively.
 
 And the build, simulated layer by layer:
 
