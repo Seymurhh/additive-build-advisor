@@ -125,6 +125,34 @@ def test_record_is_json_serializable():
     json.dumps(r["record"])  # raises if any numpy types leaked through
 
 
+def test_runtime_twin_scenarios():
+    # The runtime FFF print twin runs every scenario off the advisor's record.
+    from abadvisor.runtime_twin import SCENARIOS, simulate_runtime
+    rec = advise(mesh=shapes.gantry_bracket(), process="fff_pla",
+                 grid_n=32, fea_grid_n=12)["record"]
+    for sc in SCENARIOS:
+        t = simulate_runtime(rec, sc)
+        assert t.n_layers > 0
+        assert t.health.shape[0] == t.n_layers == len(t.recs)
+        assert 0.0 <= float(t.health.min()) and float(t.health.max()) <= 1.0
+        assert 0 <= t.focus_layer < t.n_layers
+
+    # a clean print raises no anomalies; the warp scenario does
+    assert simulate_runtime(rec, "nominal").worst_severity == "ok"
+    assert len(simulate_runtime(rec, "warp_adhesion").anomalies) >= 1
+
+    # verify-before-act: a sensor dropout must make the twin refuse to act
+    drop = simulate_runtime(rec, "sensor_dropout")
+    assert any(r["refused"] for r in drop.recs)
+    assert drop.recs[drop.focus_layer]["refused"] is True
+
+    # deterministic: same part + scenario -> identical dashboard
+    import numpy as np
+    a = simulate_runtime(rec, "warp_adhesion")
+    b = simulate_runtime(rec, "warp_adhesion")
+    assert np.array_equal(a.health, b.health)
+
+
 def _run_all():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
