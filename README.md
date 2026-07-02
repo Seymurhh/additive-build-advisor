@@ -116,6 +116,26 @@ build-advisor --list-processes
 Each run writes a `digital_thread.json` record and a self-contained
 `report.html` (figures embedded as base64).
 
+## Interactive web app
+
+The same pipeline is wrapped in a guided browser front-end
+([`streamlit_app.py`](streamlit_app.py)): pick a sample part (or upload an STL),
+choose a process, and step the part through the whole *design → build → inspect →
+decide* thread — an interactive 3-D input mesh, an orientation comparison, a
+layer-by-layer build explorer, a live warpage-exaggeration slider on the FEA
+field, severity-colored DfAM / inspection tables, and the release-gate verdict —
+with the actual pipeline outputs at every stage.
+
+```bash
+pip install -r requirements.txt   # needs streamlit>=1.37 (partial reruns) + plotly
+streamlit run streamlit_app.py
+```
+
+It also deploys on Streamlit Community Cloud straight from this repo: the entry
+point is `streamlit_app.py`, dependencies come from `requirements.txt`, and the
+theme is set in `.streamlit/config.toml`. If `plotly` is unavailable the app
+falls back to the static matplotlib report figures.
+
 ## What a run produces
 
 | Orientation screening | Part in chosen orientation | Warpage FEA (deformed mesh) |
