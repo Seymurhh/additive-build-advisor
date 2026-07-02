@@ -7,6 +7,8 @@ scikit-fem>=8.0
 matplotlib>=3.6
 
 # Interactive web app (streamlit_app.py), deployed on Streamlit Community Cloud.
-# Not needed for the CLI/library; only for the browser front-end.
-streamlit>=1.36
+# Not needed for the CLI/library; only for the browser front-end. streamlit>=1.37
+# is required for @st.fragment / st.rerun(scope="fragment"), which give the
+# flicker-free, partial-rerun stage stepping.
+streamlit>=1.37
 plotly>=5.22

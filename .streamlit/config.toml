@@ -1,0 +1,16 @@
+# Streamlit theme for the Additive Build Advisor front-end.
+# Keeps the native widgets (buttons, sliders, download buttons) visually
+# consistent with the custom CSS injected in streamlit_app.py. Safe to deploy on
+# Streamlit Community Cloud as-is.
+[theme]
+base = "light"
+primaryColor = "#2563eb"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f1f4f9"
+textColor = "#1a2230"
+font = "sans serif"
+
+[client]
+# A crash should surface a short message from the app, not a raw stack trace.
+showErrorDetails = false
+toolbarMode = "minimal"
