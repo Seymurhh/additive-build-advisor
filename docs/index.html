@@ -148,6 +148,23 @@
       Warpage scales with each process's contraction strain — so among these PLA warps most and SLA least.</figcaption>
   </figure>
 
+  <h2>Where the thread continues — runtime FFF print twin</h2>
+  <p>The advisor ends in a machine-readable release record, and that record is the hand-off point.
+  Once the part is on the printer, a companion <strong>runtime FFF print-monitoring twin</strong> takes over:
+  it synthesizes the sensor streams an instrumented machine produces — hotend and bed temperature, extrusion
+  flow, frame vibration, and the corner-lift off the bed the FEA predicted — compares each against its
+  expected envelope, flags deviation windows, tracks a smoothed health score, and recommends action. It
+  carries the same <em>verify-before-act</em> discipline as the release gate: on a sensor dropout it refuses
+  to recommend a parameter change rather than acting on incomplete data. Together the two halves span
+  design&nbsp;&rarr;&nbsp;build&nbsp;&rarr;&nbsp;monitor.</p>
+  <figure>
+    <img src="twin_dashboard.png" alt="Runtime FFF print twin dashboard: sensor streams versus expected envelopes with anomaly windows shaded, a health score, and a verify-before-act recommendation">
+    <figcaption>The twin's actual simulator, anomaly detector, and recommender on the sample bracket under a
+      multi-fault run — under-extrusion, a layer shift, a sensor dropout (held), then warping — each channel
+      against its envelope with faults shaded, a runtime health score, and the verify-before-act
+      recommendation. Reproduced interactively as the final stage of the web app.</figcaption>
+  </figure>
+
   <h2>Technical report</h2>
   <p>The full write-up — formulation, equations, validation, and limitations — is in the
   <a href="report.pdf">PDF report</a>.</p>

@@ -9,12 +9,13 @@ of three decisions -- ``release_to_build``, ``needs_engineering_review``, or
 attached.
 
 This is the same verify-before-act discipline used in the companion runtime
-monitoring twin (``mini-manufacturing-digital-twin``): a model may recommend,
-but a physical action is gated on evidence, on the confidence of the simulation
-(is the mesh watertight? did the discretized volume validate?), and on a human
-review path when anything is uncertain. The record also carries an explicit
-hand-off to that monitoring twin, so design intent flows downstream to as-built
-monitoring -- the front and back halves of one digital thread.
+**FFF print-monitoring twin** (:mod:`abadvisor.runtime_twin`): a model may
+recommend, but a physical action is gated on evidence, on the confidence of the
+simulation (is the mesh watertight? did the discretized volume validate?), and on
+a human review path when anything is uncertain. The record also carries an
+explicit hand-off to that print twin, so design intent flows downstream to
+as-built monitoring on the printer -- the front and back halves of one digital
+thread.
 """
 
 from __future__ import annotations
@@ -132,7 +133,7 @@ def build_record(
     gate = _apply_gate(is_watertight, sim.volume_error_pct, dfam, inspection)
 
     part_id = f"{inspection['part_name']}-{mesh.geometry_hash}"
-    machine_id = f"SEAS-{profile.family}-01"
+    machine_id = f"{profile.family}-PRINTER-01"
 
     record = {
         "schema": SCHEMA,
@@ -197,9 +198,9 @@ def build_record(
         "inspection_plan": inspection,
         "gate": gate,
         "handoff": {
-            "to": "mini-manufacturing-digital-twin",
+            "to": "fff-runtime-print-twin",
             "note": "Release gate output becomes the as-built monitoring context "
-                    "for the runtime digital twin once the part is on the machine.",
+                    "for the runtime FFF print twin once the part is on the printer.",
             "as_built_context": {
                 "machine_id": machine_id,
                 "part_id": part_id,

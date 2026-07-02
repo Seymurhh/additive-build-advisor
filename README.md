@@ -62,15 +62,18 @@ renders the report.
 
 ## Where this sits: the digital thread
 
-This is the **front half** of a digital thread — design intent flowing into a
-build decision. It is built to hand off to a companion project,
-`mini-manufacturing-digital-twin`, which is the **back half**: runtime
-monitoring of the part once it is on a machine. That matches how the ES 51 lab
-actually runs — students print the part, then take it to the lathe or mill to
-machine the features FFF cannot hold (the ones this tool flags for
-post-machining). The release gate's output (part id, expected build, the
-tolerances that need machining, and the signals to watch) becomes the twin's
-as-built monitoring context for that cut.
+The advisor is the **front half** of a digital thread — design intent flowing
+into a build decision. Where it ends — a released build with a machine-readable
+hand-off record — a companion **runtime FFF print-monitoring twin**
+([`runtime_twin.py`](src/abadvisor/runtime_twin.py)) picks up: the **back half**,
+runtime monitoring of the print once the part is on the machine. It synthesizes
+the sensor streams an instrumented printer produces (hotend and bed temperature,
+extrusion flow, frame vibration, and the corner-lift off the bed that the
+advisor's FEA predicted), compares each against its expected envelope, flags
+deviation windows, tracks a health score, and issues a **verify-before-act**
+recommendation — the same discipline as the release gate, right down to refusing
+to act on a sensor dropout. The release gate's output (part id, expected build,
+and the signals to watch) becomes that twin's as-built monitoring context.
 
 ![System diagram](docs/system_diagram.png)
 
@@ -86,9 +89,19 @@ flowchart LR
       D --> I["inspection plan"]
       I --> R["release gate + digital-thread record"]
     end
-    R -->|release_to_build| TWIN["mini-manufacturing-digital-twin\n(monitors the lathe/mill cut)"]
+    R -->|release_to_build| TWIN["runtime FFF print twin\n(monitors the print: temps, flow, vibration, warp)"]
     R -->|needs review / redesign| HUMAN["engineer"]
 ```
+
+The runtime print twin runs its own simulator, anomaly detector, and recommender
+(the additive analog of a runtime CNC process monitor). Under a multi-fault run —
+under-extrusion, a layer shift, a sensor dropout (held), then warping — it reads
+as:
+
+![Runtime FFF print twin dashboard](docs/twin_dashboard.png)
+
+It is reproduced interactively as the final **Runtime print monitor** stage of
+the web app.
 
 ## Quickstart
 

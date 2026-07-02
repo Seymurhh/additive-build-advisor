@@ -3,7 +3,7 @@
 A clean top-to-bottom flow: geometry in, orientation, voxelization, the analyses
 that run on the voxel model (build simulation, distortion FEA, DfAM) plus
 inspection planning from the tolerances, all feeding the release gate, which
-emits the digital-thread record and hands off to the runtime monitoring twin.
+emits the digital-thread record and hands off to the runtime FFF print twin.
 
 Run:  python examples/make_diagram.py
 """
@@ -95,8 +95,8 @@ def main() -> int:
     arrow(ax, cx, 4.35, cx, 3.95)
     box(ax, cx, 3.45, 9.6, 0.9, "Digital-thread record", "machine-readable JSON  +  HTML report", gray, gray_e)
     arrow(ax, cx, 3.0, cx, 2.6)
-    box(ax, cx, 2.05, 9.6, 1.0, "Hand-off to runtime monitoring twin",
-        "mini-manufacturing-digital-twin · as-built monitoring", gray, gray_e)
+    box(ax, cx, 2.05, 9.6, 1.0, "Hand-off to runtime FFF print twin",
+        "hotend · bed · flow · vibration · warp — as-built monitoring", gray, gray_e)
 
     out = ROOT / "docs" / "system_diagram.png"
     out.parent.mkdir(parents=True, exist_ok=True)

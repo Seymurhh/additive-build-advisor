@@ -158,7 +158,7 @@ def _draw_verdict(ax, rec):
     n = len(gate.get("reasons", []))
     ax.text(0.5, 0.20, f"{n} reason{'s' if n != 1 else ''} on record", fontsize=8, color=MUTED,
             ha="center", va="center")
-    ax.text(0.5, 0.09, "hand-off to runtime monitoring twin", fontsize=7.6, color=MUTED,
+    ax.text(0.5, 0.09, "hand-off to runtime FFF print twin", fontsize=7.6, color=MUTED,
             ha="center", va="center", style="italic")
 
 
@@ -220,7 +220,7 @@ def main() -> int:
     _caption(fig, 1, f"ray-stabbing voxel model\n{sim['n_layers']} layers · {sim['build_time_h']:.2f} h · ${sim['total_cost_usd']:.2f}")
     _caption(fig, 2, f"thermal-contraction FEA (scikit-fem)\npeak {rec['distortion_fea']['max_distortion_mm']:.3f} mm off the bed")
     _caption(fig, 3, f"severity-ranked checks +\nas-built capability vs. tolerances")
-    _caption(fig, 4, f"release · review · redesign\nmachine-readable record out")
+    _caption(fig, 4, f"release · review · redesign\nrecord out → runtime FFF print twin")
 
     fig.suptitle("Additive Build Advisor — the design-to-inspection digital thread",
                  x=0.5, y=0.965, fontsize=14.5, fontweight="bold", color=INK)

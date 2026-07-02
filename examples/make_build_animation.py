@@ -3,8 +3,8 @@
 Shows the chosen part building up one layer at a time on the plate (voxels
 stacking, coloured by height) alongside a live metrics panel: current layer,
 build height, percent complete, and material deposited, with the per-layer
-cross-section filling in as the build progresses. This is the additive analog of
-the runtime CNC digital-twin dashboard.
+cross-section filling in as the build progresses — a preview of the runtime FFF
+print-twin dashboard that monitors the actual print.
 
 Run:  python examples/make_build_animation.py
 """

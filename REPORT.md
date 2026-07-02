@@ -32,7 +32,7 @@ and solved with **scikit-fem** (on `scipy`); `matplotlib` renders the figures.
 The pipeline is: geometry recovery → orientation screening → voxelization → three
 analyses on the voxel model (build simulation, distortion FEA, DfAM) plus an
 inspection plan from the tolerances → a release gate → a digital-thread record
-that can hand off to a runtime monitoring twin.
+that hands off to a runtime FFF print-monitoring twin.
 
 ## Geometry and the voxelization engine
 

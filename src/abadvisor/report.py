@@ -372,10 +372,10 @@ requires CMM: {rec['inspection_plan']['requires_cmm']} · requires CT: {rec['ins
 {insp_tbl}
 
 <h2>Digital-thread hand-off</h2>
-<p class="sub">On release, this context is handed to the runtime monitoring twin
-(<code>{_html.escape(rec['handoff']['to'])}</code>):</p>
+<p class="sub">On release, this context is handed to the runtime FFF print-monitoring twin
+(<code>{_html.escape(rec['handoff']['to'])}</code>), which watches the print on the machine:</p>
 <ul>
-  <li>machine_id <code>{_html.escape(handoff['machine_id'])}</code>, part_id <code>{_html.escape(handoff['part_id'])}</code></li>
+  <li>printer_id <code>{_html.escape(handoff['machine_id'])}</code>, part_id <code>{_html.escape(handoff['part_id'])}</code></li>
   <li>operation <code>{_html.escape(handoff['operation'])}</code>, expected {handoff['expected_layers']} layers / {handoff['expected_build_time_h']} h</li>
   <li>signals to watch: {_html.escape(', '.join(handoff['watch']))}</li>
 </ul>
