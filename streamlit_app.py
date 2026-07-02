@@ -34,9 +34,11 @@ import streamlit as st  # noqa: E402
 from abadvisor import report, shapes  # noqa: E402
 from abadvisor.materials import get_profile, list_profiles  # noqa: E402
 from abadvisor.pipeline import advise  # noqa: E402
+from abadvisor.runtime_twin import SCENARIOS, simulate_runtime  # noqa: E402
 
 try:  # interactive 3-D is a nice-to-have; degrade to matplotlib if plotly is absent
     import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
     _PLOTLY = True
 except Exception:  # pragma: no cover
     _PLOTLY = False
@@ -68,34 +70,35 @@ _SAMPLES = {
                       "A tall slender cylinder — exercises the aspect-ratio / stability check."),
 }
 
-# Phases group the seven stages into the design -> build -> inspect -> decide arc.
+# Phases group the stages into the design -> build -> inspect -> decide -> monitor arc.
 _PHASES = [
     ("Design", "#2b6cb0"),
     ("Build", "#0f766e"),
     ("Inspect", "#6d28d9"),
     ("Decide", "#b45309"),
+    ("Monitor", "#0891b2"),
 ]
 
 # One entry per stage: short ribbon label, full title, phase index, and the
 # plain-language "what just happened / why it matters" copy.
 _STAGES = [
-    dict(short="Geometry", title="Geometry & watertight check", phase=0,
+    dict(short="Geometry", title="Geometry & watertight check", phase=0,  # noqa: E128
          what="The STL is parsed from scratch, its facet normals are recomputed from the "
               "triangle winding, and the mesh is tested for watertightness.",
          why="Everything downstream trusts this mesh. A leaky or non-manifold model makes the "
              "inside/outside test unreliable, so it is caught here before it can corrupt the "
              "volume, support, and warpage estimates."),
-    dict(short="Orientation", title="Build-orientation screening", phase=0,
+    dict(short="Orient", title="Build-orientation screening", phase=0,
          what="Candidate \"rest a flat face on the bed\" orientations are generated from the part's "
               "own flat faces and scored on support volume, base-contact area, and build height.",
          why="Orientation is the highest-leverage decision in additive manufacturing: it sets how much "
              "support you print, how well the part sticks to the bed, and how tall (and slow) the build is."),
-    dict(short="Build sim", title="Layer-by-layer build simulation", phase=1,
+    dict(short="Build", title="Layer-by-layer build simulation", phase=1,
          what="The oriented part is voxelized and turned into a build: layer count, per-layer "
               "cross-section, support material, time, and cost.",
          why="This is the estimate you check before committing machine time — and the voxel volume is "
              "cross-checked against the analytic mesh volume so you know the discretization can be trusted."),
-    dict(short="Warpage FEA", title="Thermal-contraction warpage FEA", phase=1,
+    dict(short="Warpage", title="Thermal-contraction warpage FEA", phase=1,
          what="A linear-elastic finite-element solve (scikit-fem) applies the material's cooling "
               "shrinkage as a uniform eigenstrain and clamps the first layer to the bed.",
          why="The solved displacement field is the corner-lift that curls parts off the bed as they "
@@ -105,16 +108,23 @@ _STAGES = [
               "aspect ratio, trapped material, and the FEA warpage ratio.",
          why="Each finding is ranked by severity; the worst one drives the release gate. This is the "
              "manufacturability review a build-prep engineer runs before a part is cleared."),
-    dict(short="Inspection", title="First-article inspection plan", phase=2,
+    dict(short="Inspect", title="First-article inspection plan", phase=2,
          what="Each toleranced dimension becomes a measurement step with a method and equipment, and "
               "the tolerance is checked against the process's as-built capability.",
          why="Tolerances tighter than the process can hold as-built are flagged for a finishing step, "
              "so you plan the post-machining instead of inspecting to a guaranteed failure."),
-    dict(short="Release gate", title="Release gate & hand-off", phase=3,
+    dict(short="Gate", title="Release gate & hand-off", phase=3,
          what="The record is assembled and a gate is applied: release to build, needs engineering "
               "review, or redesign required — with the reasons attached.",
          why="The advisor never silently approves a build. On release, a machine-readable context is "
-             "handed to a runtime monitoring twin; anything uncertain is routed to a human."),
+             "handed to the runtime print twin; anything uncertain is routed to a human."),
+    dict(short="Runtime", title="Runtime print monitor (FFF twin)", phase=4,
+         what="Where the thread continues: once the part is on the printer, a runtime twin models the "
+              "print — synthesizing hotend/bed temperature, extrusion flow, vibration, and corner-lift, "
+              "and comparing each against its expected envelope.",
+         why="It closes the loop from design intent to what the machine actually does — flagging "
+             "print-time faults (warping, clogs, layer shift, thermal drift) and, with the same "
+             "verify-before-act discipline as the release gate, refusing to act on incomplete data."),
 ]
 
 _GATE_META = {
@@ -122,6 +132,7 @@ _GATE_META = {
     "needs_engineering_review": ("rev", "Needs engineering review", "🟠"),
     "redesign_required": ("red", "Redesign required", "🔴"),
 }
+_SEVC = {"ok": "#1b7f3b", "info": "#2c6fbb", "warning": "#b8860b", "critical": "#b22222"}
 
 # Reliability caps for uploads (the voxelizer is pure-Python, so very large or
 # empty meshes are refused / warned about rather than allowed to hang the app).
@@ -505,6 +516,60 @@ def _fig_layer_profile(z_centers, area_mm2, k):
     return fig
 
 
+_TWIN_ORDER = ["hotend_c", "bed_c", "flow_pct", "vibration_g", "corner_lift_um"]
+
+
+def _health_color(v):
+    return "#1b7f3b" if v >= 0.8 else "#b8860b" if v >= 0.5 else "#b22222"
+
+
+def _fig_health(value):
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=value * 100, number={"suffix": "%", "font": {"size": 30}},
+        gauge={"axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#94a3b8"},
+               "bar": {"color": _health_color(value)},
+               "borderwidth": 0,
+               "steps": [{"range": [0, 50], "color": "#fdecec"},
+                         {"range": [50, 80], "color": "#fdf6e5"},
+                         {"range": [80, 100], "color": "#e8f5ee"}]}))
+    fig.update_layout(height=210, margin=dict(l=16, r=16, t=10, b=6),
+                      paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#1a2230"))
+    return fig
+
+
+def _fig_twin(twin, k):
+    """The runtime dashboard: each sensor vs its envelope, anomaly windows shaded."""
+    fig = make_subplots(rows=len(_TWIN_ORDER), cols=1, shared_xaxes=True, vertical_spacing=0.045,
+                        subplot_titles=[twin.sensors[s]["label"] for s in _TWIN_ORDER])
+    x = twin.layers
+    for r, key in enumerate(_TWIN_ORDER, start=1):
+        s = twin.sensors[key]
+        fig.add_trace(go.Scatter(x=x, y=s["hi"], line=dict(width=0), hoverinfo="skip",
+                                 showlegend=False), row=r, col=1)
+        fig.add_trace(go.Scatter(x=x, y=s["lo"], line=dict(width=0), fill="tonexty",
+                                 fillcolor="rgba(148,163,184,.16)", hoverinfo="skip",
+                                 showlegend=False, name="envelope"), row=r, col=1)
+        fig.add_trace(go.Scatter(x=x, y=s["actual"], line=dict(color="#1e4e8c", width=1.6),
+                                 connectgaps=False, showlegend=False,
+                                 hovertemplate=f"layer %{{x}}: %{{y:.1f}} {s['unit']}<extra></extra>"),
+                      row=r, col=1)
+        fig.update_yaxes(title_text=s["unit"], row=r, col=1, title_font=dict(size=10),
+                         gridcolor="#eef2f7")
+    for a in twin.anomalies:
+        rr = _TWIN_ORDER.index(a["sensor"]) + 1
+        fig.add_vrect(x0=twin.layers[a["start"]], x1=twin.layers[a["end"]],
+                      fillcolor=_SEVC[a["severity"]], opacity=0.13, line_width=0, row=rr, col=1)
+    fig.add_vline(x=twin.layers[k], line=dict(color="#0891b2", width=1.5, dash="dot"),
+                  row="all", col=1)
+    fig.update_xaxes(title_text="layer", row=len(_TWIN_ORDER), col=1, gridcolor="#e3e8f0")
+    fig.update_layout(height=780, margin=dict(l=0, r=8, t=26, b=0), showlegend=False,
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#f7f9fc")
+    for ann in fig.layout.annotations:  # subplot titles
+        ann.font.size = 12
+        ann.font.color = "#3a4658"
+    return fig
+
+
 # --------------------------------------------------------------------------- #
 # Per-stage renderers
 # --------------------------------------------------------------------------- #
@@ -713,16 +778,93 @@ def _stage_gate(result, figs, decim):
     rec = result["record"]
     _verdict(rec)
     h = rec["handoff"]["as_built_context"]
-    st.markdown("**Hand-off to the runtime monitoring twin**")
+    st.markdown("**Hand-off to the runtime print twin**")
     _md('<div class="hand aba-anim">'
-        f'<span class="k">machine_id</span> : {_esc(h["machine_id"])}<br>'
+        f'<span class="k">printer_id</span> : {_esc(h["machine_id"])}<br>'
         f'<span class="k">part_id</span>    : {_esc(h["part_id"])}<br>'
         f'<span class="k">operation</span>  : {_esc(h["operation"])}<br>'
         f'<span class="k">expected</span>   : {_esc(h["expected_layers"])} layers / {_esc(h["expected_build_time_h"])} h<br>'
         f'<span class="k">watch</span>      : {_esc(", ".join(h["watch"]))}</div>')
-    _md('<div class="small-note">On release, this context is handed to the companion runtime monitoring '
-        'twin, which watches the part on the machine. The advisor never silently approves a build.</div>')
+    _md('<div class="small-note">On release, this context becomes the as-built monitoring context for the '
+        'runtime FFF print twin — the next stage, where the thread continues onto the printer. '
+        'The advisor never silently approves a build.</div>')
     _downloads(rec, result)
+
+
+def _rec_card(rec_now):
+    color = _SEVC.get(rec_now.get("color", "info"), "#2c6fbb")
+    conf = float(rec_now.get("confidence", 0))
+    badge = "HOLD · VERIFY" if rec_now.get("refused") else rec_now.get("status", "").upper()
+    meter = "" if rec_now.get("refused") else (
+        f'<div class="meter" style="max-width:260px; margin-top:8px"><span style="width:{conf*100:.0f}%; '
+        f'background:{color}"></span></div>'
+        f'<div class="small-note" style="margin-top:4px">recommendation confidence {conf:.2f}</div>')
+    _md(f'<div class="aba-card aba-anim" style="border-left:5px solid {color}">'
+        f'<span class="chip" style="background:{color}">{_esc(badge)}</span>'
+        f'<div class="aba-h" style="font-size:17px; margin-top:8px">{_esc(rec_now.get("title", ""))}</div>'
+        f'<div class="tx" style="color:var(--ink2); font-size:14px; margin-top:2px">'
+        f'{_esc(rec_now.get("detail", ""))}</div>{meter}'
+        f'<div class="small-note" style="margin-top:8px">Verify-before-act: the twin declines to '
+        f'recommend a parameter change on incomplete data.</div></div>')
+
+
+def _stage_twin(result, figs, decim):
+    rec = result["record"]
+    keys = list(SCENARIOS.keys())
+    # default to the signature FFF failure mode — the warp the advisor's FEA predicted
+    default_sc = "warp_adhesion"
+
+    cur = st.session_state.get("twin_scenario", default_sc)
+    sc = st.selectbox("Inject a print-time scenario", keys,
+                      index=keys.index(cur) if cur in keys else keys.index(default_sc),
+                      format_func=lambda k: SCENARIOS[k][0], key="twin_scenario")
+    st.caption(SCENARIOS[sc][1])
+
+    twin = simulate_runtime(rec, sc)
+    if st.session_state.get("twin_last_scenario") != sc:  # open on the informative layer
+        st.session_state["twin_layer"] = int(twin.focus_layer)
+        st.session_state["twin_last_scenario"] = sc
+
+    if _PLOTLY and twin.n_layers > 1:
+        k = st.slider("Print progress (layer)", 0, twin.n_layers - 1, int(twin.focus_layer),
+                      key="twin_layer")
+    else:
+        k = int(twin.focus_layer)
+    snap = twin.snapshot(k)
+    rec_now = snap["rec"]
+
+    _md(_stat_grid([
+        ("Layer", f"{snap['layer']} / {twin.n_layers}", f"{snap['progress']*100:.0f}% printed", True),
+        ("Health score", f"{snap['health']*100:.0f}%", "smoothed process state", False),
+        ("Active anomalies", str(len(snap["active"])),
+         "at this layer", len(snap["active"]) > 0),
+        ("Worst overall", twin.worst_severity.upper(), "this print",
+         twin.worst_severity in ("warning", "critical")),
+    ]))
+
+    cc = st.columns([3, 2])
+    with cc[0]:
+        _rec_card(rec_now)
+    with cc[1]:
+        if _PLOTLY:
+            st.plotly_chart(_fig_health(snap["health"]), use_container_width=True,
+                            config={"displayModeBar": False})
+        else:
+            _md(_stat_grid([("Health score", f"{snap['health']*100:.0f}%", None,
+                             snap["health"] < 0.8)]))
+
+    if _PLOTLY:
+        st.plotly_chart(_fig_twin(twin, k), use_container_width=True, config={"displaylogo": False})
+        st.caption("Each channel against its expected envelope (grey band); anomaly windows are shaded by "
+                   "severity; the dotted line is the current layer. Drag the slider to watch the "
+                   "recommendation escalate as evidence accrues.")
+
+    if twin.anomalies:
+        rows = [[a["label"], a["severity"], f"{twin.layers[a['start']]}–{twin.layers[a['end']]}",
+                 a["message"]] for a in twin.anomalies]
+        _md(_findings_table(["channel", "severity", "layers", "detected"], rows, sev_index=1))
+    else:
+        st.success("No out-of-envelope anomalies detected for this scenario — a clean print.")
 
 
 def _verdict(rec):
@@ -754,7 +896,7 @@ def _downloads(rec, result):
 
 
 _RENDER = [_stage_geometry, _stage_orientation, _stage_build, _stage_fea,
-           _stage_dfam, _stage_inspection, _stage_gate]
+           _stage_dfam, _stage_inspection, _stage_gate, _stage_twin]
 
 
 # --------------------------------------------------------------------------- #
@@ -816,7 +958,7 @@ def _ribbon(step):
         for name, c in _PHASES)
     _md(f'<div class="phase-row aba-anim">{tags}</div>')
 
-    cols = st.columns([1.1, 1, 1, 1, 1, 1, 1, 1])
+    cols = st.columns([1.15] + [1] * len(_STAGES))
     if cols[0].button("⌂ Overview", use_container_width=True,
                       type="primary" if step == 0 else "secondary", key="rb_ov"):
         _goto(0)
@@ -988,7 +1130,8 @@ if st.session_state.get("run_btn"):
         st.session_state["step"] = 0
         # reset range-dependent stage widgets so a stored index can't exceed the
         # new part's range (grids differ in layer count / candidate count).
-        for _k in ("build_layer", "warp_exagg", "orient_sel"):
+        for _k in ("build_layer", "warp_exagg", "orient_sel",
+                   "twin_layer", "twin_scenario", "twin_last_scenario"):
             st.session_state.pop(_k, None)
     except Exception as e:  # never show a raw stack trace / blank page
         st.session_state.pop("run", None)
